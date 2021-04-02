@@ -1,0 +1,9 @@
+h5py
+ipykernel
+matplotlib
+numpy
+opencv-python
+pandas
+scikit-learn
+scipy>=1.2.0
+seaborn
