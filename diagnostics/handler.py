@@ -128,8 +128,12 @@ class ModelHandler(object):
 
         elif metric == "unimodal_mse":
             if "heatmap_file" not in kwargs.keys() or kwargs["heatmap_file"] is None:
-                heatmap_file = os.path.join(
-                    self.model_dir, 'heatmaps_and_images', 'heatmaps.h5')
+                # updated default path
+                heatmap_file = os.path.join(self.model_dir, 'heatmaps.h5')
+                if not os.path.exists(heatmap_file):
+                    # try old default path
+                    heatmap_file = os.path.join(
+                        self.model_dir, 'heatmaps_and_images', 'heatmaps.h5')
             else:
                 heatmap_file = kwargs["heatmap_file"]
             with h5py.File(heatmap_file, 'r') as f:
