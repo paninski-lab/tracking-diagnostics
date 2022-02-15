@@ -136,7 +136,7 @@ def temporal_norm(keypoints_pred):
     if len(keypoints_pred.shape) != 2:
         keypoints_pred = keypoints_pred.reshape(keypoints_pred.shape[0], -1)
 
-    return t_loss.compute_loss(keypoints_pred)
+    return t_loss.compute_loss(keypoints_pred).numpy()
 
 
 # --------------------------------------------------------------------------------------

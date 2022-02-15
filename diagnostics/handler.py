@@ -63,13 +63,13 @@ class ModelHandler(object):
 
         # decide what to do if prediction file does not exist
         if not os.path.exists(pred_file):
+            from lightning_pose.utils.io import ckpt_path_from_base_path
             if video_file is not None:
                 assert os.path.isfile(video_file)
                 # process video
                 # - save pred keypoints at pred_file, which currently doesn't exist
                 # - save pred heatmaps at heatmap_file if given in kwargs, else don't
                 #   save
-                from lightning_pose.utils.io import ckpt_path_from_base_path
                 from lightning_pose.utils.predictions import predict_single_video
                 print('processing video at %s' % video_file)
                 # handle paths
@@ -91,6 +91,28 @@ class ModelHandler(object):
                     preds_file=pred_file,
                     heatmap_file=kwargs["heatmap_file"],
                     sequence_length=self.cfg.eval.dali_parameters.sequence_length,
+                )
+            elif kwargs.get("datamodule", None) is not None:
+                from lightning_pose.utils.predictions import predict_dataset
+                print('processing labeled dataset')
+                # handle paths
+                saved_preds_dir = os.path.dirname(pred_file)
+                if not os.path.exists(saved_preds_dir):
+                    os.makedirs(saved_preds_dir)
+                if "heatmap_file" in kwargs.keys():
+                    saved_heat_dir = os.path.dirname(kwargs["heatmap_file"])
+                    if not os.path.exists(saved_heat_dir):
+                        os.makedirs(saved_heat_dir)
+                else:
+                    kwargs["heatmap_file"] = None
+                ckpt_file = ckpt_path_from_base_path(
+                    self.model_dir, model_name=self.cfg.model.model_name)
+                predict_dataset(
+                    cfg=self.cfg,
+                    data_module=kwargs["datamodule"],
+                    ckpt_file=ckpt_file,
+                    preds_file=pred_file,
+                    heatmap_file=kwargs["heatmap_file"],
                 )
             else:
                 raise FileNotFoundError("Did not find requested file at %s" % pred_file)
