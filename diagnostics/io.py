@@ -44,7 +44,9 @@ def get_model_params(cfg):
     if semi_supervised:
         cfg_less["losses_to_use"] = cfg["model"]["losses_to_use"]
         cfg_less["rng_seed_data_dali"] = cfg["training"]["rng_seed_data_dali"]
-        cfg_less["unlabeled_sequence_length"] = cfg["training"]["unlabeled_sequence_length"]
+        cfg_less["unlabeled_sequence_length"] = cfg["training"][
+            "unlabeled_sequence_length"
+        ]
         if "pca_multiview" in cfg_less["losses_to_use"]:
             cfg_less["pca_multiview"] = cfg["losses"]["pca_multiview"]
         if "pca_singleview" in cfg_less["losses_to_use"]:
@@ -105,8 +107,13 @@ def find_model_versions(base_dir, cfg, verbose=False, keys_to_sweep=[]):
                 cfg_ = yaml.safe_load(f)
             # collapse first level of hierarchy  # TODO: abstract w/ list comprehension
             cfg_curr = {
-                **cfg_["model"], **cfg_["data"], **cfg_["losses"], **cfg_["training"]
+                **cfg_["model"],
+                **cfg_["data"],
+                **cfg_["losses"],
+                **cfg_["training"],
             }
+            if cfg_curr["losses_to_use"] is None:  # support null case in hydra
+                cfg_curr["losses_to_use"] = []
             if all([cfg_curr[key] == cfg_req[key] for key in cfg_req.keys()]):
                 # found match - did it finish fitting?
                 if os.path.exists(os.path.join(version_dir, "predictions.csv")):
@@ -120,8 +127,9 @@ def find_model_versions(base_dir, cfg, verbose=False, keys_to_sweep=[]):
                     print("unmatched keys: [current vs requested]")
                     for key in cfg_req.keys():
                         if cfg_curr[key] != cfg_req[key]:
-                            print("{}: {} vs {}".format(
-                                key, cfg_curr[key], cfg_req[key]))
+                            print(
+                                "{}: {} vs {}".format(key, cfg_curr[key], cfg_req[key])
+                            )
                     print()
         except FileNotFoundError:
             continue
@@ -162,7 +170,8 @@ def get_best_version_from_tb_logs(version_list, metric="val_loss"):
     for version in version_list:
         # assume a particular hydra output structure
         log_file = glob.glob(
-            os.path.join(version, "tb_logs", "*", "*", "events.out.tfevents.*"))
+            os.path.join(version, "tb_logs", "*", "*", "events.out.tfevents.*")
+        )
         if len(log_file) == 0:
             # found version directory but no log file
             val_losses.append(np.inf)

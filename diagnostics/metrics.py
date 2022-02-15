@@ -23,12 +23,14 @@ def pca_reprojection_error(keypoints_pred, mean, kept_eigenvectors, device="cpu"
 
     if not isinstance(keypoints_pred, torch.Tensor):
         keypoints_pred = torch.tensor(
-            keypoints_pred, device=device, dtype=torch.float32)
+            keypoints_pred, device=device, dtype=torch.float32
+        )
     if not isinstance(mean, torch.Tensor):
         mean = torch.tensor(mean, device=device, dtype=torch.float32)
     if not isinstance(kept_eigenvectors, torch.Tensor):
         kept_eigenvectors = torch.tensor(
-            kept_eigenvectors, device=device, dtype=torch.float32)
+            kept_eigenvectors, device=device, dtype=torch.float32
+        )
 
     results = compute_pca_reprojection_error(
         clean_pca_arr=keypoints_pred,
@@ -50,8 +52,9 @@ def rmse(keypoints_true, keypoints_pred):
         np.ndarray, shape (samples, n_keypoints)
 
     """
+    # TODO: verify this formula
     mse = np.square(keypoints_true - keypoints_pred)
-    return np.sqrt(mse[:, :, 0] + mse[:, :, 1])
+    return np.sqrt(0.5 * (mse[:, :, 0] + mse[:, :, 1]))
 
 
 def unimodal_mse(heatmaps_pred, img_height, img_width, downsample_factor):
@@ -77,23 +80,26 @@ def unimodal_mse(heatmaps_pred, img_height, img_width, downsample_factor):
     # initialize unimodal loss object
     uni_loss = UnimodalLoss(
         loss_name="unimodal_mse",
-        original_image_height=img_height, original_image_width=img_width,
-        downsampled_image_height=int(img_height // (2 ** downsample_factor)),
-        downsampled_image_width=int(img_width // (2 ** downsample_factor)),
+        original_image_height=img_height,
+        original_image_width=img_width,
+        downsampled_image_height=int(img_height // (2**downsample_factor)),
+        downsampled_image_width=int(img_width // (2**downsample_factor)),
         data_module=None,
     )
 
     # check inputs
     if not isinstance(heatmaps_pred, torch.Tensor):
         heatmaps_pred = torch.tensor(
-            heatmaps_pred, device=uni_loss.device, dtype=torch.float32)
+            heatmaps_pred, device=uni_loss.device, dtype=torch.float32
+        )
 
     # construct unimodal heatmaps from predictions
     if isinstance(downsample_factor, int):
         for _ in range(downsample_factor):
             heatmaps_pred = pyrup(heatmaps_pred)
     softmaxes = spatial_softmax2d(
-        heatmaps_pred, temperature=torch.tensor(100, device=uni_loss.device))
+        heatmaps_pred, temperature=torch.tensor(100, device=uni_loss.device)
+    )
     preds_pt = spatial_expectation2d(softmaxes, normalized_coordinates=False)
     heatmaps_ideal = generate_heatmaps(
         keypoints=preds_pt,
@@ -101,14 +107,14 @@ def unimodal_mse(heatmaps_pred, img_height, img_width, downsample_factor):
         width=uni_loss.original_image_width,
         output_shape=(
             uni_loss.downsampled_image_height,
-            uni_loss.downsampled_image_width),
+            uni_loss.downsampled_image_width,
+        ),
     )
 
     # compare unimodal heatmaps with predicted heatmaps
     results = uni_loss.compute_loss(
         targets=heatmaps_ideal,
-        predictions=torch.tensor(
-            heatmaps, device=uni_loss.device, dtype=torch.float32)
+        predictions=torch.tensor(heatmaps, device=uni_loss.device, dtype=torch.float32),
     ).numpy()
 
     return np.mean(results, axis=(2, 3))
@@ -127,11 +133,13 @@ def temporal_norm(keypoints_pred):
     """
 
     from lightning_pose.losses.losses import TemporalLoss
+
     t_loss = TemporalLoss()
 
     if not isinstance(keypoints_pred, torch.Tensor):
         keypoints_pred = torch.tensor(
-            keypoints_pred, device=t_loss.device, dtype=torch.float32)
+            keypoints_pred, device=t_loss.device, dtype=torch.float32
+        )
 
     if len(keypoints_pred.shape) != 2:
         keypoints_pred = keypoints_pred.reshape(keypoints_pred.shape[0], -1)
