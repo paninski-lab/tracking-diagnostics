@@ -2,15 +2,25 @@
 
 import os
 import pandas as pd
+import torch
+import h5py
+import numpy as np
 
 from diagnostics.io import find_model_versions
 from diagnostics.metrics import (
-    pca_reprojection_error, rmse, temporal_norm, unimodal_mse
+    pca_reprojection_error,
+    rmse,
+    temporal_norm,
+    unimodal_mse,
+)
+
+from lightning_pose.utils.pca import (
+    format_multiview_data_for_pca,
+    compute_pca_reprojection_error,
 )
 
 
 class ModelHandler(object):
-
     def __init__(self, base_dir, cfg, verbose=False):
 
         version = find_model_versions(base_dir, cfg, verbose=verbose)
@@ -31,8 +41,8 @@ class ModelHandler(object):
                 unlabeled data only:
                     "temporal_norm": keypoint-wise norm between successive time points
                 either:
-                    "pca_reproj": error between data and it's reprojection from a low-d
-                        representation
+                    "pca_multiview": error between (2*num_views)-D preds and their 3D-PCA reprojection
+                    "pca_singleview: error between preds and K-dim PCA reconstruction
                     "unimodal_mse":
             pred_file: absolute path of predictions csv file; if a relative path, the
                 file is assumed to be in the model directory
@@ -55,7 +65,7 @@ class ModelHandler(object):
             np.ndarray: desired metric computed for each frame
 
         """
-
+        print("Metric: %s" % metric)
         # check paths
         if not os.path.isabs(pred_file):
             # assume file resides in model directory
@@ -64,6 +74,7 @@ class ModelHandler(object):
         # decide what to do if prediction file does not exist
         if not os.path.exists(pred_file):
             from lightning_pose.utils.io import ckpt_path_from_base_path
+
             if video_file is not None:
                 assert os.path.isfile(video_file)
                 # process video
@@ -71,7 +82,8 @@ class ModelHandler(object):
                 # - save pred heatmaps at heatmap_file if given in kwargs, else don't
                 #   save
                 from lightning_pose.utils.predictions import predict_single_video
-                print('processing video at %s' % video_file)
+
+                print("processing video at %s" % video_file)
                 # handle paths
                 saved_vid_preds_dir = os.path.dirname(pred_file)
                 if not os.path.exists(saved_vid_preds_dir):
@@ -83,7 +95,8 @@ class ModelHandler(object):
                 else:
                     kwargs["heatmap_file"] = None
                 ckpt_file = ckpt_path_from_base_path(
-                    self.model_dir, model_name=self.cfg.model.model_name)
+                    self.model_dir, model_name=self.cfg.model.model_name
+                )
                 predict_single_video(
                     video_file=video_file,
                     ckpt_file=ckpt_file,
@@ -94,7 +107,8 @@ class ModelHandler(object):
                 )
             elif kwargs.get("datamodule", None) is not None:
                 from lightning_pose.utils.predictions import predict_dataset
-                print('processing labeled dataset')
+
+                print("processing labeled dataset")
                 # handle paths
                 saved_preds_dir = os.path.dirname(pred_file)
                 if not os.path.exists(saved_preds_dir):
@@ -106,7 +120,8 @@ class ModelHandler(object):
                 else:
                     kwargs["heatmap_file"] = None
                 ckpt_file = ckpt_path_from_base_path(
-                    self.model_dir, model_name=self.cfg.model.model_name)
+                    self.model_dir, model_name=self.cfg.model.model_name
+                )
                 predict_dataset(
                     cfg=self.cfg,
                     data_module=kwargs["datamodule"],
@@ -136,29 +151,86 @@ class ModelHandler(object):
 
         # compute metric
         if metric == "rmse":
+            print("Computing RMSE...")
             if is_video:
                 raise ValueError("cannot compute RMSE on unlabeled video data!")
             results = rmse(kwargs["keypoints_true"], keypoints_pred)
 
-        elif metric == "pca_reproj":
-            results = pca_reprojection_error(
-                keypoints_pred.reshape(keypoints_pred.shape[0], -1),
-                mean=kwargs["pca_obj"].parameters['mean'],
-                kept_eigenvectors=kwargs["pca_obj"].parameters["kept_eigenvectors"],
-                device=kwargs["pca_obj"].device,
-            )
+        elif metric == "pca_singleview" or metric == "pca_multiview":
+
+            # resize back to smaller dims.
+            # TODO: be careful, that'll reshape all the keypoints going forward
+            x_resize = self.cfg.data.image_resize_dims.width
+            x_og = self.cfg.data.image_orig_dims.width
+            keypoints_pred[:, :, 0] = keypoints_pred[:, :, 0] * (x_resize / x_og)
+            # put y vals back in original pixel space
+            y_resize = self.cfg.data.image_resize_dims.height
+            y_og = self.cfg.data.image_orig_dims.height
+            keypoints_pred[:, :, 1] = keypoints_pred[:, :, 1] * (y_resize / y_og)
+
+            if metric == "pca_multiview":
+                original_dims = keypoints_pred.shape  # batch, num_total_keypoints, 2
+                print(original_dims)
+                mirrored_column_matches = kwargs["pca_obj"].mirrored_column_matches
+                keypoints_pred = torch.tensor(
+                    keypoints_pred,
+                    dtype=kwargs["pca_obj"].parameters["mean"].dtype,
+                )  # shape = (batch_size, num_keypoints, 2)
+                print("shape after making into a tensor:", keypoints_pred.shape)
+                keypoints_pred = format_multiview_data_for_pca(
+                    data_arr=keypoints_pred,
+                    mirrored_column_matches=mirrored_column_matches,
+                )  # shape = 2 * num_views X batch_size * num_used_keypoints
+                print("shape_after_formatting:", keypoints_pred.shape)
+
+                # need -- do the reconstruction to get keypoint_pca_pred.
+                # then undo reshaping.
+                # then compute norms between keypoint_pca_pred and keypoint_pred
+                # TODO: it seems like the shape of the input to reprojection error isn't good, should be two dimensional?
+                results_raw = compute_pca_reprojection_error(
+                    clean_pca_arr=keypoints_pred,
+                    kept_eigenvectors=kwargs["pca_obj"].parameters["kept_eigenvectors"],
+                    mean=kwargs["pca_obj"].parameters["mean"],
+                )  # -> batch_size * num_used_keypoints X num_views
+
+                print("shape of results after reprojection:", results_raw.shape)
+                results_raw = results_raw.reshape(
+                    -1, len(mirrored_column_matches[0]), len(mirrored_column_matches)
+                )  # batch X num_used_keypoints X num_views
+
+                print("shape of results after another reshape:", results_raw.shape)
+
+                # next, put this back into a full keypoints pred arr
+                results = np.nan * np.zeros(
+                    (original_dims[0], original_dims[1] * 2)
+                )  # removing the (x,y) coords, remaining with batch*num_total_keypoints
+                for c, cols in enumerate(mirrored_column_matches):
+                    results[:, cols] = results_raw[
+                        :, :, c
+                    ]  # just the columns belonging to view c
+            if metric == "pca_singleview":
+
+                results = pca_reprojection_error(
+                    keypoints_pred.reshape(
+                        keypoints_pred.shape[0], -1
+                    ),  # just keypoint preds
+                    mean=kwargs["pca_obj"].parameters["mean"],
+                    kept_eigenvectors=kwargs["pca_obj"].parameters["kept_eigenvectors"],
+                    device=kwargs["pca_obj"].device,
+                )
 
         elif metric == "unimodal_mse":
             if "heatmap_file" not in kwargs.keys() or kwargs["heatmap_file"] is None:
                 # updated default path
-                heatmap_file = os.path.join(self.model_dir, 'heatmaps.h5')
+                heatmap_file = os.path.join(self.model_dir, "heatmaps.h5")
                 if not os.path.exists(heatmap_file):
                     # try old default path
                     heatmap_file = os.path.join(
-                        self.model_dir, 'heatmaps_and_images', 'heatmaps.h5')
+                        self.model_dir, "heatmaps_and_images", "heatmaps.h5"
+                    )
             else:
                 heatmap_file = kwargs["heatmap_file"]
-            with h5py.File(heatmap_file, 'r') as f:
+            with h5py.File(heatmap_file, "r") as f:
                 heatmaps = f["heatmaps"][()]
                 s = heatmaps.shape
             if s[0] != keypoints_pred.shape[0]:
@@ -189,7 +261,7 @@ def check_kwargs(kwargs, metric):
 
     if metric == "rmse":
         req_kwargs = ["keypoints_true"]
-    elif metric == "pca_reproj":
+    elif metric == "pca_multiview" or metric == "pca_singleview":
         req_kwargs = ["pca_obj"]
     elif metric == "unimodal_mse":
         req_kwargs = []
