@@ -6,6 +6,18 @@ import torch
 from lightning_pose.utils.pca import compute_pca_reprojection_error
 
 
+def pca_reprojection_error_per_keypoint(pca_loss_object, keypoints_pred, device="cpu"):
+    """Compute error between data and its reprojection from a low-d representation."""
+    if not isinstance(keypoints_pred, torch.Tensor):
+        keypoints_pred = torch.tensor(
+            keypoints_pred, device=device, dtype=torch.float32
+        )
+    # TODO: check that the compute_loss function calls the right metric post hoc.
+    keypoints_pred = pca_loss_object.pca._format_data(data_arr=keypoints_pred)
+    elementwise_loss = pca_loss_object.compute_loss(predictions=keypoints_pred)
+    return elementwise_loss.numpy()
+
+
 def pca_reprojection_error(keypoints_pred, mean, kept_eigenvectors, device="cpu"):
     """Error between data and it's reprojection from a low-d representation.
 
@@ -71,19 +83,19 @@ def rmse(keypoints_true, keypoints_pred):
     mse = np.square(keypoints_true - keypoints_pred)
     return np.sqrt(0.5 * (mse[:, :, 0] + mse[:, :, 1]))
 
-    # from lightning_pose.losses.losses import TemporalLoss
+    # # from lightning_pose.losses.losses import TemporalLoss
 
-    # t_loss = TemporalLoss()
+    # # t_loss = TemporalLoss()
 
-    if not isinstance(keypoints_pred, torch.Tensor):
-        keypoints_pred = torch.tensor(
-            keypoints_pred, device=t_loss.device, dtype=torch.float32
-        )
+    # if not isinstance(keypoints_pred, torch.Tensor):
+    #     keypoints_pred = torch.tensor(
+    #         keypoints_pred, device=t_loss.device, dtype=torch.float32
+    #     )
 
-    if len(keypoints_pred.shape) != 2:
-        keypoints_pred = keypoints_pred.reshape(keypoints_pred.shape[0], -1)
+    # if len(keypoints_pred.shape) != 2:
+    #     keypoints_pred = keypoints_pred.reshape(keypoints_pred.shape[0], -1)
 
-    # return t_loss.compute_loss(keypoints_pred).numpy()
+    # # return t_loss.compute_loss(keypoints_pred).numpy()
 
 
 def unimodal_mse(heatmaps_pred, img_height, img_width, downsample_factor):

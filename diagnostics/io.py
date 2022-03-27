@@ -1,9 +1,10 @@
 """File handling."""
 
 import numpy as np
-from omegaconf import OmegaConf
+from omegaconf import DictConfig, OmegaConf
 import os
 import yaml
+from typing import Dict, Union
 
 from lightning_pose.utils.io import check_if_semi_supervised
 
@@ -192,3 +193,25 @@ def get_best_version_from_tb_logs(version_list, metric="val_loss"):
         return []
 
     return version_list[np.argmin(val_losses)]
+
+# TODO: add a function that takes in a bunch of parameters, and spits out a list of model paths that match these
+""" details: you have a base config. then receive a dict with certain fields to edit
+generate a few search congifs. then loop over these configs and match using the handler or find_model_versions
+before everything you need to create a search dict.
+ """
+
+def create_empty_search_dict() -> Dict[str, dict]:
+    keys = ["model", "data", "losses", "training"]
+    search_cfg = {}
+    for key in keys:
+        search_cfg[key] = {}
+    return search_cfg
+
+# now need to fill in these vals
+def edit_search_dict(base_cfg: Union[dict, DictConfig], **kwargs):
+    # check if the value is str, float, or integer. if you're getting a list for it, it means you have to iterate
+    for key, val in kwargs.items():
+        print(key, val)
+        if val is dict:
+            for subkey, subval in val.items():
+                print(subkey, subval)

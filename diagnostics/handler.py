@@ -5,10 +5,11 @@ import pandas as pd
 import torch
 import h5py
 import numpy as np
+from zmq import device
 
 from diagnostics.io import find_model_versions
 from diagnostics.metrics import (
-    pca_reprojection_error,
+    pca_reprojection_error_per_keypoint,
     rmse,
     temporal_norm,
     unimodal_mse,
@@ -16,7 +17,6 @@ from diagnostics.metrics import (
 
 from lightning_pose.utils.pca import (
     format_multiview_data_for_pca,
-    compute_pca_reprojection_error,
 )
 
 
@@ -30,6 +30,17 @@ class ModelHandler(object):
         self.cfg = cfg
         self.pred_df = None
         self.last_computed_metric = None
+
+    def resize_keypoints(self, keypoints_pred):
+        """reshape to training dims for pca losses, which are optimized for these dims"""
+        x_resize = self.cfg.data.image_resize_dims.width
+        x_og = self.cfg.data.image_orig_dims.width
+        keypoints_pred[:, :, 0] = keypoints_pred[:, :, 0] * (x_resize / x_og)
+        # put y vals back in original pixel space
+        y_resize = self.cfg.data.image_resize_dims.height
+        y_og = self.cfg.data.image_orig_dims.height
+        keypoints_pred[:, :, 1] = keypoints_pred[:, :, 1] * (y_resize / y_og)
+        return keypoints_pred
 
     def compute_metric(self, metric, pred_file, video_file=None, **kwargs):
         """Compute a range of metrics on a provided prediction file.
@@ -54,7 +65,7 @@ class ModelHandler(object):
                     keypoints_true: np.ndarray
                 "temporal_norm":
                 "pca_reproj":
-                    pca_obj: lightning_pose.utils.pca.KeypointPCA object
+                    pca_loss_obj: lightning_pose.utils.pca.KeypointPCA object
                 "unimodal_mse":
                     heatmap_file: absolute path to heatmap h5 file; if not present, the
                         file is assumed to be in
@@ -158,47 +169,39 @@ class ModelHandler(object):
 
         elif metric == "pca_singleview" or metric == "pca_multiview":
 
-            # resize back to smaller dims.
+            # resize back to smaller training dims.
             # TODO: be careful, that'll reshape all the keypoints going forward
-            x_resize = self.cfg.data.image_resize_dims.width
-            x_og = self.cfg.data.image_orig_dims.width
-            keypoints_pred[:, :, 0] = keypoints_pred[:, :, 0] * (x_resize / x_og)
-            # put y vals back in original pixel space
-            y_resize = self.cfg.data.image_resize_dims.height
-            y_og = self.cfg.data.image_orig_dims.height
-            keypoints_pred[:, :, 1] = keypoints_pred[:, :, 1] * (y_resize / y_og)
+            keypoints_pred = self.resize_keypoints(keypoints_pred=keypoints_pred)
 
             if metric == "pca_multiview":
-                original_dims = keypoints_pred.shape  # batch, num_total_keypoints, 2
-                print(original_dims)
-                mirrored_column_matches = kwargs["pca_obj"].mirrored_column_matches
-                keypoints_pred = torch.tensor(
-                    keypoints_pred,
-                    dtype=kwargs["pca_obj"].parameters["mean"].dtype,
-                )  # shape = (batch_size, num_keypoints, 2)
-                print("shape after making into a tensor:", keypoints_pred.shape)
-                keypoints_pred = format_multiview_data_for_pca(
-                    data_arr=keypoints_pred,
-                    mirrored_column_matches=mirrored_column_matches,
-                )  # shape = 2 * num_views X batch_size * num_used_keypoints
-                print("shape_after_formatting:", keypoints_pred.shape)
+                original_dims = keypoints_pred.shape
+                mirrored_column_matches = kwargs["pca_loss_obj"].mirrored_column_matches
+                # adding a reshaping below since the loss class expects a single last dim with num_keypoints*2
+                results_raw = pca_reprojection_error_per_keypoint(
+                    kwargs["pca_loss_obj"],
+                    keypoints_pred=keypoints_pred.reshape(keypoints_pred.shape[0], -1),
+                    device=kwargs["pca_loss_obj"].device
+                )
 
-                # need -- do the reconstruction to get keypoint_pca_pred.
-                # then undo reshaping.
-                # then compute norms between keypoint_pca_pred and keypoint_pred
-                # TODO: it seems like the shape of the input to reprojection error isn't good, should be two dimensional?
-                results_raw = compute_pca_reprojection_error(
-                    clean_pca_arr=keypoints_pred,
-                    kept_eigenvectors=kwargs["pca_obj"].parameters["kept_eigenvectors"],
-                    mean=kwargs["pca_obj"].parameters["mean"],
-                )  # -> batch_size * num_used_keypoints X num_views
+                # original_dims = keypoints_pred.shape  # batch, num_total_keypoints, 2
+                # print(original_dims)
+                # mirrored_column_matches = kwargs["pca_obj"].mirrored_column_matches
+                # keypoints_pred = torch.tensor(
+                #     keypoints_pred,
+                #     dtype=kwargs["pca_obj"].parameters["mean"].dtype,
+                # )  # shape = (batch_size, num_keypoints, 2)
+                # print("shape after making into a tensor:", keypoints_pred.shape)
+                # keypoints_pred = format_multiview_data_for_pca(
+                #     data_arr=keypoints_pred,
+                #     mirrored_column_matches=mirrored_column_matches,
+                # )  # shape = 2 * num_views X batch_size * num_used_keypoints
+                # print("shape_after_formatting:", keypoints_pred.shape)
 
-                print("shape of results after reprojection:", results_raw.shape)
                 results_raw = results_raw.reshape(
-                    -1, len(mirrored_column_matches[0]), len(mirrored_column_matches)
+                    -1,
+                    len(mirrored_column_matches[0]),
+                    len(mirrored_column_matches),
                 )  # batch X num_used_keypoints X num_views
-
-                print("shape of results after another reshape:", results_raw.shape)
 
                 # next, put this back into a full keypoints pred arr
                 results = np.nan * np.zeros(
@@ -209,14 +212,19 @@ class ModelHandler(object):
                         :, :, c
                     ]  # just the columns belonging to view c
             if metric == "pca_singleview":
-
-                results = pca_reprojection_error(
-                    keypoints_pred.reshape(
-                        keypoints_pred.shape[0], -1
-                    ),  # just keypoint preds
-                    mean=kwargs["pca_obj"].parameters["mean"],
-                    kept_eigenvectors=kwargs["pca_obj"].parameters["kept_eigenvectors"],
-                    device=kwargs["pca_obj"].device,
+                # Dan commented this thing out in favor of the loss used for training.
+                # results = pca_reprojection_error(
+                #     keypoints_pred.reshape(
+                #         keypoints_pred.shape[0], -1
+                #     ),  # just keypoint preds
+                #     mean=kwargs["pca_obj"].parameters["mean"],
+                #     kept_eigenvectors=kwargs["pca_obj"].parameters["kept_eigenvectors"],
+                #     device=kwargs["pca_obj"].device,
+                # )
+                results = pca_reprojection_error_per_keypoint(
+                    kwargs["pca_loss_obj"],
+                    keypoints_pred=keypoints_pred.reshape(keypoints_pred.shape[0], -1),
+                    device=kwargs["pca_loss_obj"].device
                 )
 
         elif metric == "unimodal_mse":
@@ -262,7 +270,7 @@ def check_kwargs(kwargs, metric):
     if metric == "rmse":
         req_kwargs = ["keypoints_true"]
     elif metric == "pca_multiview" or metric == "pca_singleview":
-        req_kwargs = ["pca_obj"]
+        req_kwargs = ["pca_loss_obj"]
     elif metric == "unimodal_mse":
         req_kwargs = []
     elif metric == "temporal_norm":
