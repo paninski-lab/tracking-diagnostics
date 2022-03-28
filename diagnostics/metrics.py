@@ -1,21 +1,28 @@
 """A collection of functions to assess pose estimation performance."""
 
+from typing import Optional
 import numpy as np
 import torch
-
 from lightning_pose.utils.pca import compute_pca_reprojection_error
 
 
-def pca_reprojection_error_per_keypoint(pca_loss_object, keypoints_pred, device="cpu"):
+def pca_reprojection_error_per_keypoint(
+    pca_loss_object, keypoints_pred, device: Optional[str] = None
+):
     """Compute error between data and its reprojection from a low-d representation."""
+    if device is None:
+        device = pca_loss_object.pca.device
     if not isinstance(keypoints_pred, torch.Tensor):
         keypoints_pred = torch.tensor(
             keypoints_pred, device=device, dtype=torch.float32
         )
     # TODO: check that the compute_loss function calls the right metric post hoc.
+    print(keypoints_pred.shape)
     keypoints_pred = pca_loss_object.pca._format_data(data_arr=keypoints_pred)
+    print(keypoints_pred.shape)
     elementwise_loss = pca_loss_object.compute_loss(predictions=keypoints_pred)
-    return elementwise_loss.numpy()
+    print(elementwise_loss.shape)
+    return elementwise_loss.cpu().numpy()
 
 
 def pca_reprojection_error(keypoints_pred, mean, kept_eigenvectors, device="cpu"):

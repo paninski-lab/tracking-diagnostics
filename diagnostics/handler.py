@@ -179,9 +179,7 @@ class ModelHandler(object):
                 # adding a reshaping below since the loss class expects a single last dim with num_keypoints*2
                 results_raw = pca_reprojection_error_per_keypoint(
                     kwargs["pca_loss_obj"],
-                    keypoints_pred=keypoints_pred.reshape(keypoints_pred.shape[0], -1),
-                    device=kwargs["pca_loss_obj"].device
-                )
+                    keypoints_pred=keypoints_pred.reshape(keypoints_pred.shape[0], -1))
 
                 # original_dims = keypoints_pred.shape  # batch, num_total_keypoints, 2
                 # print(original_dims)
@@ -223,9 +221,7 @@ class ModelHandler(object):
                 # )
                 results = pca_reprojection_error_per_keypoint(
                     kwargs["pca_loss_obj"],
-                    keypoints_pred=keypoints_pred.reshape(keypoints_pred.shape[0], -1),
-                    device=kwargs["pca_loss_obj"].device
-                )
+                    keypoints_pred=keypoints_pred.reshape(keypoints_pred.shape[0], -1))
 
         elif metric == "unimodal_mse":
             if "heatmap_file" not in kwargs.keys() or kwargs["heatmap_file"] is None:
