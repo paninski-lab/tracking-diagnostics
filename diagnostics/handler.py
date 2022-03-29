@@ -99,7 +99,7 @@ class ModelHandler(object):
                 saved_vid_preds_dir = os.path.dirname(pred_file)
                 if not os.path.exists(saved_vid_preds_dir):
                     os.makedirs(saved_vid_preds_dir)
-                if "heatmap_file" in kwargs.keys():
+                if "heatmap_file" in kwargs.keys() and kwargs["heatmap_file"] is not None:
                     saved_heat_dir = os.path.dirname(kwargs["heatmap_file"])
                     if not os.path.exists(saved_heat_dir):
                         os.makedirs(saved_heat_dir)
@@ -175,7 +175,7 @@ class ModelHandler(object):
 
             if metric == "pca_multiview":
                 original_dims = keypoints_pred.shape
-                mirrored_column_matches = kwargs["pca_loss_obj"].mirrored_column_matches
+                mirrored_column_matches = kwargs["pca_loss_obj"].pca.mirrored_column_matches
                 # adding a reshaping below since the loss class expects a single last dim with num_keypoints*2
                 results_raw = pca_reprojection_error_per_keypoint(
                     kwargs["pca_loss_obj"],
