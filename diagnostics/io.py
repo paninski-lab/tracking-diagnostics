@@ -48,6 +48,7 @@ def get_model_params(cfg):
         cfg_less["unlabeled_sequence_length"] = cfg["training"][
             "unlabeled_sequence_length"
         ]
+        cfg_less["limit_train_batches"] = cfg["training"]["limit_train_batches"]
         if "pca_multiview" in cfg_less["losses_to_use"]:
             cfg_less["pca_multiview"] = cfg["losses"]["pca_multiview"]
         if "pca_singleview" in cfg_less["losses_to_use"]:
