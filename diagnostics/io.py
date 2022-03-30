@@ -122,6 +122,7 @@ def find_model_versions(base_dir, cfg, verbose=False, keys_to_sweep=[]):
                     if len(keys_to_sweep) == 0:
                         # we found the only model we're looking for
                         break
+                    print(f"Found model at: {version_dir}")
             else:
                 if verbose:
                     print(version_dir)
