@@ -23,6 +23,9 @@ from urllib.parse import _NetlocResultMixinBase
 from grpc import dynamic_ssl_server_credentials
 import streamlit as st
 import pandas as pd
+import plotly.express as px
+import plotly.graph_objects as go
+from plotly.subplots import make_subplots
 import numpy as np
 import os
 from typing import List, Dict, Tuple, Optional
@@ -129,23 +132,70 @@ if len(uploaded_files) > 0:
         "Pick models:", pd.Series(list(dframes.keys())), default=list(dframes.keys())
     )
     bodypart = st.selectbox("Pick a single bodypart:", pd.Series(bodypart_names))
-    coordinate = st.radio("Coordinate:", pd.Series(["x", "y", "likelihood"]))
+    coordinate = st.radio("Coordinate:", pd.Series(["x", "y"]))
     # bodypart = 2
     cols = get_col_names(bodypart, coordinate, models)
 
-    import plotly.express as px
+    # ---------------------------------------------------
+    # plot traces
+    # ---------------------------------------------------
 
-    fig = px.line(
-        df_concat,
-        x=np.arange(df_concat.shape[0]),
-        y=cols,
-        labels={"x": "frame number", "value": coordinate},
-        #               hover_data={"date": "|%B %d, %Y"},
-        title="Timeseries of %s" % bodypart,
+    colors = px.colors.qualitative.Plotly
+
+    fig = make_subplots(
+        rows=2, cols=1,
+        shared_xaxes=True,
+        x_title="Frame number",
+        row_heights=[2, 1],
+        vertical_spacing=0.05,
     )
+
+    for c, col in enumerate(cols):
+        fig.add_trace(
+            go.Scatter(
+                name=col,
+                x=np.arange(df_concat.shape[0]),
+                y=df_concat[col],
+                mode='lines',
+                line=dict(color=colors[c]),
+            ),
+            row=1, col=1
+        )
+
+    for c, col in enumerate(cols):
+        col_l = col.replace("_%s_" % coordinate, "_likelihood_")
+        fig.add_trace(
+            go.Scatter(
+                name=col_l,
+                x=np.arange(df_concat.shape[0]),
+                y=df_concat[col_l],
+                mode='lines',
+                line=dict(color=colors[c]),
+                showlegend=False,
+            ),
+            row=2, col=1
+        )
+
+    fig['layout']['yaxis']['title'] = "%s coordinate" % coordinate
+    fig['layout']['yaxis2']['title'] = "confidence"
+
+    fig.update_layout(width=800, height=600, title_text="Timeseries of %s" % bodypart)
+
+    # fig = px.line(
+    #     df_concat,
+    #     x=np.arange(df_concat.shape[0]),
+    #     y=cols,
+    #     labels={"x": "frame number", "value": coordinate},
+    #     #               hover_data={"date": "|%B %d, %Y"},
+    #     title="Timeseries of %s" % bodypart,
+    # )
     # add condition for this
     # files, data = load_data(NROWS)
     st.plotly_chart(fig)
+
+    # ---------------------------------------------------
+    # plot temporal losses
+    # ---------------------------------------------------
 
     st.header("Temporal loss diagnostics")
 
