@@ -174,7 +174,7 @@ class ModelHandler(object):
 
             # resize back to smaller training dims.
             # TODO: be careful, that'll reshape all the keypoints going forward
-            keypoints_pred = self.resize_keypoints(cfg, keypoints_pred=keypoints_pred)
+            keypoints_pred = self.resize_keypoints(self.cfg, keypoints_pred=keypoints_pred)
 
             if metric == "pca_multiview":
                 original_dims = keypoints_pred.shape
@@ -207,7 +207,7 @@ class ModelHandler(object):
 
                 # next, put this back into a full keypoints pred arr
                 results = np.nan * np.zeros(
-                    (original_dims[0], original_dims[1] * 2)
+                    (original_dims[0], original_dims[1])
                 )  # removing the (x,y) coords, remaining with batch*num_total_keypoints
                 for c, cols in enumerate(mirrored_column_matches):
                     results[:, cols] = results_raw[
