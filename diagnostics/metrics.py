@@ -17,11 +17,11 @@ def pca_reprojection_error_per_keypoint(
             keypoints_pred, device=device, dtype=torch.float32
         )
     # TODO: check that the compute_loss function calls the right metric post hoc.
-    print(keypoints_pred.shape)
+    # print(keypoints_pred.shape)
     keypoints_pred = pca_loss_object.pca._format_data(data_arr=keypoints_pred)
-    print(keypoints_pred.shape)
+    # print(keypoints_pred.shape)
     elementwise_loss = pca_loss_object.compute_loss(predictions=keypoints_pred)
-    print(elementwise_loss.shape)
+    # print(elementwise_loss.shape)
     return elementwise_loss.cpu().numpy()
 
 
