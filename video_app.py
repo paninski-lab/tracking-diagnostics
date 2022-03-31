@@ -27,8 +27,19 @@ import plotly.express as px
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 import numpy as np
+from omegaconf import DictConfig
 import os
 from typing import List, Dict, Tuple, Optional
+import yaml
+
+from lightning_pose.losses.losses import PCALoss
+from lightning_pose.utils.io import return_absolute_data_paths
+from lightning_pose.utils.scripts import (
+    get_imgaug_transform, get_dataset, get_data_module, get_loss_factories,
+)
+
+from diagnostics.handler import ModelHandler
+from diagnostics.metrics import pca_reprojection_error_per_keypoint
 
 
 def strip_cols_append_name(df: pd.DataFrame, name: str) -> pd.DataFrame:
@@ -43,7 +54,8 @@ def concat_dfs(dframes: Dict[str, pd.DataFrame]) -> Tuple[pd.DataFrame, List[str
     for model_name, dframe in dframes.items():
         if counter == 0:
             df_concat = dframe.copy()
-            base_colnames = list(df_concat.columns.levels[0][1:])
+            # base_colnames = list(df_concat.columns.levels[0])  # <-- sorts names, bad!
+            base_colnames = list([c[0] for c in df_concat.columns[1::3]])
             df_concat = strip_cols_append_name(df_concat, model_name)
         else:
             df = strip_cols_append_name(dframe.copy(), model_name)
@@ -55,7 +67,7 @@ def concat_dfs(dframes: Dict[str, pd.DataFrame]) -> Tuple[pd.DataFrame, List[str
 @st.cache
 def compute_temporal_norms(
     df: pd.DataFrame, bodypart_names: List[str], model_name: str
-):
+) -> pd.DataFrame:
     # compute the norm just for one dataframe
     df_norms = pd.DataFrame(columns=bodypart_names)
     diffs = df.diff(periods=1)  # not using .abs
@@ -72,14 +84,74 @@ def compute_temporal_norms(
 def compute_norms_per_dataset(
     dfs: Dict[str, pd.DataFrame], bodypart_names: List[str]
 ) -> pd.DataFrame:
-    # cols.append("hparam")
+
     colnames = [*bodypart_names, "model_name"]
     concat_norm_df = pd.DataFrame(columns=colnames)
     for model_name, df in dfs.items():
         df_norm = compute_temporal_norms(df, bodypart_names, model_name)
-        # compute mean across bps
         concat_norm_df = pd.concat([concat_norm_df, df_norm], axis=0)
     return concat_norm_df
+
+
+@st.cache(hash_funcs={PCALoss: lambda _: None})  # streamlit doesn't know how to hash PCALoss
+def compute_pcamv_reprojection_error(
+    df: pd.DataFrame, bodypart_names: List[str], model_name: str, cfg: dict, pca_loss: PCALoss,
+) -> pd.DataFrame:
+
+    # TODO: copied from diagnostics.handler.Handler::compute_metric; figure out a way to share
+    tmp = df.to_numpy().reshape(df.shape[0], -1, 3)
+    keypoints_pred = tmp[:, :, :2]  # shape (samples, n_keypoints, 2)
+
+    keypoints_pred = ModelHandler.resize_keypoints(cfg, keypoints_pred=keypoints_pred)
+
+    original_dims = keypoints_pred.shape
+    mirrored_column_matches = pca_loss.pca.mirrored_column_matches
+    # adding a reshaping below since the loss class expects a single last dim with num_keypoints*2
+    results_raw = pca_reprojection_error_per_keypoint(
+        pca_loss, keypoints_pred=keypoints_pred.reshape(keypoints_pred.shape[0], -1))
+    results_raw = results_raw.reshape(
+        -1,
+        len(mirrored_column_matches[0]),
+        len(mirrored_column_matches),
+    )  # batch X num_used_keypoints X num_views
+
+    # next, put this back into a full keypoints pred arr
+    results = np.nan * np.zeros((original_dims[0], original_dims[1]))
+    for c, cols in enumerate(mirrored_column_matches):
+        results[:, cols] = results_raw[:, :, c]  # just the columns belonging to view c
+
+    # collect results
+    df_rpe = pd.DataFrame(columns=bodypart_names)
+    for c, col in enumerate(bodypart_names):  # loop over bodyparts
+        df_rpe[col] = results[:, c]
+    df_rpe["model_name"] = model_name
+    df_rpe["mean"] = df_rpe[bodypart_names[:-1]].mean(axis=1)
+    return df_rpe
+
+
+@st.cache(hash_funcs={PCALoss: lambda _: None})  # streamlit doesn't know how to hash PCALoss
+def compute_pcamv_rpe_per_dataset(
+    dfs: Dict[str, pd.DataFrame], bodypart_names: List[str], cfg: dict, pca_loss: PCALoss,
+) -> pd.DataFrame:
+
+    colnames = [*bodypart_names, "model_name"]
+    concat_pcamv_df = pd.DataFrame(columns=colnames)
+    for model_name, df in dfs.items():
+        df_ = compute_pcamv_reprojection_error(df, bodypart_names, model_name, cfg, pca_loss)
+        concat_pcamv_df = pd.concat([concat_pcamv_df, df_], axis=0)
+    return concat_pcamv_df
+
+
+@st.cache(hash_funcs={PCALoss: lambda _: None})  # streamlit doesn't know how to hash PCALoss
+def build_pcamv_loss_object(cfg):
+    data_dir, video_dir = return_absolute_data_paths(data_cfg=cfg.data)
+    imgaug_transform = get_imgaug_transform(cfg=cfg)
+    dataset = get_dataset(cfg=cfg, data_dir=data_dir, imgaug_transform=imgaug_transform)
+    data_module = get_data_module(cfg=cfg, dataset=dataset, video_dir=video_dir)
+    data_module.setup()
+    loss_factories = get_loss_factories(cfg=cfg, data_module=data_module)
+    pca_loss = loss_factories["unsupervised"].loss_instance_dict["pca_multiview"]
+    return pca_loss
 
 
 def get_full_name(bodypart: str, coordinate: str, model: str) -> str:
@@ -98,10 +170,15 @@ uploaded_files: list = st.sidebar.file_uploader(
 )
 
 if len(uploaded_files) > 0:  # otherwise don't try to proceed
+
+    # ---------------------------------------------------
+    # load data
+    # ---------------------------------------------------
+
     # read dataframes into a dict with keys=filenames
     dframes = {}
     for uploaded_file in uploaded_files:
-        dframes[uploaded_file.name] = pd.read_csv(uploaded_file, header=[1, 2])
+        dframes[uploaded_file.name] = pd.read_csv(uploaded_file, header=[1, 2], index_col=0)
 
     # edit modelnames if desired, to simplify plotting
     st.sidebar.write("Model display names (editable)")
@@ -118,6 +195,10 @@ if len(uploaded_files) > 0:  # otherwise don't try to proceed
     # concat dataframes, collapsing hierarchy and making df fatter.
     df_concat, bodypart_names = concat_dfs(dframes)
 
+    # ---------------------------------------------------
+    # plot traces
+    # ---------------------------------------------------
+
     st.header("Trace diagnostics")
 
     display_head = st.checkbox("Display trace DataFrame")
@@ -125,9 +206,6 @@ if len(uploaded_files) > 0:  # otherwise don't try to proceed
         st.write("Concatenated Dataframe:")
         st.write(df_concat.head())
 
-
-# the box select option should take body part, coordinate, and models out of checkbox
-if len(uploaded_files) > 0:
     models = st.multiselect(
         "Pick models:", pd.Series(list(dframes.keys())), default=list(dframes.keys())
     )
@@ -135,10 +213,6 @@ if len(uploaded_files) > 0:
     coordinate = st.radio("Coordinate:", pd.Series(["x", "y"]))
     # bodypart = 2
     cols = get_col_names(bodypart, coordinate, models)
-
-    # ---------------------------------------------------
-    # plot traces
-    # ---------------------------------------------------
 
     colors = px.colors.qualitative.Plotly
 
@@ -178,66 +252,50 @@ if len(uploaded_files) > 0:
 
     fig['layout']['yaxis']['title'] = "%s coordinate" % coordinate
     fig['layout']['yaxis2']['title'] = "confidence"
-
     fig.update_layout(width=800, height=600, title_text="Timeseries of %s" % bodypart)
-
-    # fig = px.line(
-    #     df_concat,
-    #     x=np.arange(df_concat.shape[0]),
-    #     y=cols,
-    #     labels={"x": "frame number", "value": coordinate},
-    #     #               hover_data={"date": "|%B %d, %Y"},
-    #     title="Timeseries of %s" % bodypart,
-    # )
-    # add condition for this
-    # files, data = load_data(NROWS)
     st.plotly_chart(fig)
 
     # ---------------------------------------------------
-    # plot temporal losses
+    # plot temporal norms
     # ---------------------------------------------------
 
     st.header("Temporal loss diagnostics")
 
-    big_df_norms = compute_norms_per_dataset(dfs=dframes, bodypart_names=bodypart_names)
-    disp_norms_head = st.checkbox("Display norms DataFrame")
-    if disp_norms_head:
-        st.write("Norms Dataframe:")
-        st.write(big_df_norms.head())
+    big_df_temp_norm = compute_norms_per_dataset(dfs=dframes, bodypart_names=bodypart_names)
+    disp_temp_norms_head = st.checkbox("Display norms DataFrame")
+    if disp_temp_norms_head:
+        st.write("Temporal norms dataframe:")
+        st.write(big_df_temp_norm.head())
 
     # show violin per bodypart
-    models_norm = st.multiselect(
-        "Pick models:",
-        pd.Series(list(dframes.keys())),
-        default=list(dframes.keys()),
-        key="models_norm",
-    )
+    # models_norm = st.multiselect(
+    #     "Pick models:",
+    #     pd.Series(list(dframes.keys())),
+    #     default=list(dframes.keys()),
+    #     key="models_norm",
+    # )
 
-    bodypart_norm = st.selectbox(
+    bodypart_temp_norm = st.selectbox(
         "Pick a single bodypart:",
         pd.Series([*bodypart_names, "mean"]),
-        key="models_norm",
+        key="bodypart_temp_norm",
     )
 
-    single_bodypart_df = big_df_norms[[bodypart_norm, "model_name"]]
-
-    # st.write(single_bodypart_df.head())
-
-    fig_box = px.box(big_df_norms, x="model_name", y=bodypart_norm)
+    fig_box = px.box(big_df_temp_norm, x="model_name", y=bodypart_temp_norm)
     fig_box.update_layout(
-        yaxis_title="Temporal Norm", xaxis_title="Model Name", title=bodypart_norm,
+        yaxis_title="Temporal Norm (pix)", xaxis_title="Model Name", title=bodypart_temp_norm,
     )
     st.plotly_chart(fig_box)
 
     fig_hist = px.histogram(
-        big_df_norms,
-        x=bodypart_norm,
+        big_df_temp_norm,
+        x=bodypart_temp_norm,
         color="model_name",
         marginal="rug",
         barmode="overlay",
     )
     fig_hist.update_layout(
-        yaxis_title="Frame count", xaxis_title="Temporal Norm", title=bodypart_norm,
+        yaxis_title="Frame count", xaxis_title="Temporal Norm (pix)", title=bodypart_temp_norm,
     )
     st.plotly_chart(fig_hist)
     # df_violin = big_df_norms.melt(id_vars="model_name")
@@ -246,6 +304,55 @@ if len(uploaded_files) > 0:
     # fig = px.box(df_violin, x="model_name", y="value", color="variable", points=False)
 
     # st.plotly_chart(fig)
+
+    # ---------------------------------------------------
+    # plot multiview reprojection errors
+    # ---------------------------------------------------
+
+    uploaded_cfg: str = st.sidebar.file_uploader(
+        "Select data config yaml (optional, for pca losses)", accept_multiple_files=False
+    )
+    # TODO: check that mirrored_column_matches exists, otherwise don't compute
+    if uploaded_cfg is not None:
+
+        st.header("PCA multiview loss diagnostics")
+
+        cfg = DictConfig(yaml.safe_load(uploaded_cfg))
+
+        cfg_pcamv = cfg.copy()
+        cfg_pcamv.model.losses_to_use = ["pca_multiview"]
+
+        # compute pca loss
+        pca_loss = build_pcamv_loss_object(cfg_pcamv)
+        big_df_pcamv = compute_pcamv_rpe_per_dataset(
+            dfs=dframes, bodypart_names=bodypart_names, cfg=cfg_pcamv, pca_loss=pca_loss)
+
+        # show violin per bodypart
+        bodypart_pcamv = st.selectbox(
+            "Pick a single bodypart:",
+            pd.Series([*bodypart_names, "mean"]),
+            key="bodypart_pcamv",
+        )
+
+        fig_box = px.box(big_df_pcamv, x="model_name", y=bodypart_pcamv)
+        fig_box.update_layout(
+            yaxis_title="Multiview PCA Reprojection Error (pix)", xaxis_title="Model Name",
+            title=bodypart_pcamv,
+        )
+        st.plotly_chart(fig_box)
+
+        fig_hist = px.histogram(
+            big_df_pcamv,
+            x=bodypart_pcamv,
+            color="model_name",
+            marginal="rug",
+            barmode="overlay",
+        )
+        fig_hist.update_layout(
+            yaxis_title="Frame count", xaxis_title="Multiview PCA Reprojection Error (pix)",
+            title=bodypart_pcamv,
+        )
+        st.plotly_chart(fig_hist)
 
 # compute norm, compute threshold crossings
 # loop over original dataframes

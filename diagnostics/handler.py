@@ -21,6 +21,8 @@ from lightning_pose.utils.pca import (
 
 
 class ModelHandler(object):
+    """Helper class for computing various metrics on pose estimates."""
+
     def __init__(self, base_dir, cfg, verbose=False):
 
         version = find_model_versions(base_dir, cfg, verbose=verbose)
@@ -31,14 +33,15 @@ class ModelHandler(object):
         self.pred_df = None
         self.last_computed_metric = None
 
-    def resize_keypoints(self, keypoints_pred):
+    @staticmethod
+    def resize_keypoints(cfg, keypoints_pred):
         """reshape to training dims for pca losses, which are optimized for these dims"""
-        x_resize = self.cfg.data.image_resize_dims.width
-        x_og = self.cfg.data.image_orig_dims.width
+        x_resize = cfg.data.image_resize_dims.width
+        x_og = cfg.data.image_orig_dims.width
         keypoints_pred[:, :, 0] = keypoints_pred[:, :, 0] * (x_resize / x_og)
         # put y vals back in original pixel space
-        y_resize = self.cfg.data.image_resize_dims.height
-        y_og = self.cfg.data.image_orig_dims.height
+        y_resize = cfg.data.image_resize_dims.height
+        y_og = cfg.data.image_orig_dims.height
         keypoints_pred[:, :, 1] = keypoints_pred[:, :, 1] * (y_resize / y_og)
         return keypoints_pred
 
@@ -171,12 +174,13 @@ class ModelHandler(object):
 
             # resize back to smaller training dims.
             # TODO: be careful, that'll reshape all the keypoints going forward
-            keypoints_pred = self.resize_keypoints(keypoints_pred=keypoints_pred)
+            keypoints_pred = self.resize_keypoints(cfg, keypoints_pred=keypoints_pred)
 
             if metric == "pca_multiview":
                 original_dims = keypoints_pred.shape
                 mirrored_column_matches = kwargs["pca_loss_obj"].pca.mirrored_column_matches
-                # adding a reshaping below since the loss class expects a single last dim with num_keypoints*2
+                # adding a reshaping below since the loss class expects a single last dim with
+                # num_keypoints*2
                 results_raw = pca_reprojection_error_per_keypoint(
                     kwargs["pca_loss_obj"],
                     keypoints_pred=keypoints_pred.reshape(keypoints_pred.shape[0], -1))
