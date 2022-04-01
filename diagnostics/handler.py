@@ -45,7 +45,7 @@ class ModelHandler(object):
         keypoints_pred[:, :, 1] = keypoints_pred[:, :, 1] * (y_resize / y_og)
         return keypoints_pred
 
-    def compute_metric(self, metric, pred_file, video_file=None, **kwargs):
+    def compute_metric(self, metric, pred_file, video_file=None, confidence_thresh=0.0, **kwargs):
         """Compute a range of metrics on a provided prediction file.
 
         Args:
@@ -63,6 +63,8 @@ class ModelHandler(object):
             video_file: absolute path to video file; if pred_file does not exist, the
                 model will be run on this video and stored at pred_file; an error is
                 raised if pred_file does not exist and video_file is None
+            confidence_thresh : float
+                set results to nan if model confidence is below this threshold
             **kwargs: the following are required for the indicated loss:
                 "rmse":
                     keypoints_true: np.ndarray
@@ -175,9 +177,10 @@ class ModelHandler(object):
             # resize back to smaller training dims.
             # TODO: be careful, that'll reshape all the keypoints going forward
             keypoints_pred = self.resize_keypoints(self.cfg, keypoints_pred=keypoints_pred)
+            original_dims = keypoints_pred.shape
 
             if metric == "pca_multiview":
-                original_dims = keypoints_pred.shape
+
                 mirrored_column_matches = kwargs["pca_loss_obj"].pca.mirrored_column_matches
                 # adding a reshaping below since the loss class expects a single last dim with
                 # num_keypoints*2
@@ -206,13 +209,12 @@ class ModelHandler(object):
                 )  # batch X num_used_keypoints X num_views
 
                 # next, put this back into a full keypoints pred arr
-                results = np.nan * np.zeros(
-                    (original_dims[0], original_dims[1])
-                )  # removing the (x,y) coords, remaining with batch*num_total_keypoints
+                results = np.nan * np.zeros((original_dims[0], original_dims[1]))
                 for c, cols in enumerate(mirrored_column_matches):
                     results[:, cols] = results_raw[
                         :, :, c
                     ]  # just the columns belonging to view c
+
             if metric == "pca_singleview":
                 # Dan commented this thing out in favor of the loss used for training.
                 # results = pca_reprojection_error(
@@ -223,9 +225,14 @@ class ModelHandler(object):
                 #     kept_eigenvectors=kwargs["pca_obj"].parameters["kept_eigenvectors"],
                 #     device=kwargs["pca_obj"].device,
                 # )
-                results = pca_reprojection_error_per_keypoint(
+                pca_cols = kwargs["pca_loss_obj"].pca.columns_for_singleview_pca
+                results_ = pca_reprojection_error_per_keypoint(
                     kwargs["pca_loss_obj"],
                     keypoints_pred=keypoints_pred.reshape(keypoints_pred.shape[0], -1))
+
+                # next, put this back into a full keypoints pred arr
+                results = np.nan * np.zeros((original_dims[0], original_dims[1]))
+                results[:, pca_cols] = results_
 
         elif metric == "unimodal_mse":
             if "heatmap_file" not in kwargs.keys() or kwargs["heatmap_file"] is None:
@@ -254,12 +261,18 @@ class ModelHandler(object):
             if not is_video:
                 raise ValueError("cannot compute temporal norm on labeled data!")
             results = temporal_norm(keypoints_pred)
+            # add nans into first row
+            results = np.vstack([np.nan * np.zeros((1, results.shape[1])), results])
 
         else:
             raise NotImplementedError
 
         self.pred_df = pred_df
         self.last_computed_metric = metric
+
+        if confidence_thresh > 0.0:
+            assert results.shape == confidences.shape
+            results[confidences < confidence_thresh] = np.nan
 
         return results
 
