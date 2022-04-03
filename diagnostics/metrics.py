@@ -71,38 +71,10 @@ def rmse(keypoints_true, keypoints_pred):
         np.ndarray, shape (samples, n_keypoints)
 
     """
-    # TODO: verify this formula
-    # from lightning_pose.losses.losses import RegressionRMSELoss
-    # reg_loss = RegressionRMSELoss()
-    # # convert both preds and true keypoints into torch tensors
-    # if not isinstance(keypoints_pred, torch.Tensor):
-    #     keypoints_pred = torch.tensor(
-    #         keypoints_pred, device=reg_loss.device, dtype=torch.float32
-    #     )
-    # if not isinstance(keypoints_true, torch.Tensor):
-    #     keypoints_true = torch.tensor(
-    #         keypoints_true, device=reg_loss.device, dtype=torch.float32
-    #     )
-
-    # if len(keypoints_pred.shape) != 2:
-    #     keypoints_pred = keypoints_pred.reshape(keypoints_pred.shape[0], -1)
-
-    mse = np.square(keypoints_true - keypoints_pred)
-    return np.sqrt(0.5 * (mse[:, :, 0] + mse[:, :, 1]))
-
-    # # from lightning_pose.losses.losses import TemporalLoss
-
-    # # t_loss = TemporalLoss()
-
-    # if not isinstance(keypoints_pred, torch.Tensor):
-    #     keypoints_pred = torch.tensor(
-    #         keypoints_pred, device=t_loss.device, dtype=torch.float32
-    #     )
-
-    # if len(keypoints_pred.shape) != 2:
-    #     keypoints_pred = keypoints_pred.reshape(keypoints_pred.shape[0], -1)
-
-    # # return t_loss.compute_loss(keypoints_pred).numpy()
+    pixel_error = np.linalg.norm(keypoints_true - keypoints_pred, axis=2)
+    return pixel_error
+    # mse = np.square(keypoints_true - keypoints_pred)
+    # return np.sqrt(0.5 * (mse[:, :, 0] + mse[:, :, 1]))
 
 
 def unimodal_mse(heatmaps_pred, img_height, img_width, downsample_factor):
