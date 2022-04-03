@@ -1,12 +1,14 @@
 """File handling."""
 
 import numpy as np
+import pandas as pd
 from omegaconf import DictConfig, OmegaConf
 import os
 import yaml
-from typing import Dict, Union
+from typing import Dict, Union, List
 
 from lightning_pose.utils.io import check_if_semi_supervised
+import hydra
 
 
 def get_model_params(cfg):
@@ -217,3 +219,18 @@ def edit_search_dict(base_cfg: Union[dict, DictConfig], **kwargs):
         if val is dict:
             for subkey, subval in val.items():
                 print(subkey, subval)
+
+def get_base_config(config_dir: str, config_name: str) -> DictConfig:
+    assert(os.path.isdir(config_dir))
+    hydra.initialize_config_dir(config_dir)
+    cfg = hydra.compose(config_name=config_name)
+    return cfg
+
+def get_keypoint_names(csv_data: pd.DataFrame, header_rows: List[int]) -> List[str]:
+    """ Get the names of the keypoints from the csv file.
+    There are other ways of doing this, but this method preserves the order of the keypoints. """
+    if header_rows == [0,1,2]:
+        keypoint_names = [c[1] for c in csv_data.columns[1::2]]
+    elif header_rows == [1,2]:
+        keypoint_names = [c[0] for c in csv_data.columns[1::2]]
+    return keypoint_names
