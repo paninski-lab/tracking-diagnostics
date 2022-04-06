@@ -144,6 +144,7 @@ class ModelHandler(object):
                     ckpt_file=ckpt_file,
                     preds_file=pred_file,
                     heatmap_file=kwargs["heatmap_file"],
+                    gpu_id=self.cfg.training.gpu_id,
                 )
             else:
                 raise FileNotFoundError("Did not find requested file at %s" % pred_file)
