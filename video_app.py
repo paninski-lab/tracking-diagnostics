@@ -14,7 +14,11 @@ for uploaded_file in uploaded_files:
 after you've uploaded 3 files, you give each model a name, manually
 https://docs.streamlit.io/library/api-reference/widgets/st.text_input
 
-display three such 
+display three such
+
+to run from command line:
+> streamlit run /path/to/video_app.py
+
 """
 
 
