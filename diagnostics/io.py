@@ -101,7 +101,8 @@ def find_model_versions(base_dir, cfg, verbose=False, keys_to_sweep=[]):
                 # selectively sweep over loss params
                 del cfg_req[loss]
         else:
-            del cfg_req[key]
+            if key in cfg_req:
+                del cfg_req[key]
 
     version_list = []
     for version_dir in version_dirs:
