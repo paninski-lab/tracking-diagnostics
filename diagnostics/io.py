@@ -5,7 +5,7 @@ import pandas as pd
 from omegaconf import DictConfig, OmegaConf
 import os
 import yaml
-from typing import Dict, Union, List
+from typing import Dict, Union, List, Optional
 
 from lightning_pose.utils.io import check_if_semi_supervised
 import hydra
@@ -205,12 +205,14 @@ generate a few search congifs. then loop over these configs and match using the 
 before everything you need to create a search dict.
  """
 
+
 def create_empty_search_dict() -> Dict[str, dict]:
     keys = ["model", "data", "losses", "training"]
     search_cfg = {}
     for key in keys:
         search_cfg[key] = {}
     return search_cfg
+
 
 # now need to fill in these vals
 def edit_search_dict(base_cfg: Union[dict, DictConfig], **kwargs):
@@ -221,11 +223,13 @@ def edit_search_dict(base_cfg: Union[dict, DictConfig], **kwargs):
             for subkey, subval in val.items():
                 print(subkey, subval)
 
+
 def get_base_config(config_dir: str, config_name: str) -> DictConfig:
     assert(os.path.isdir(config_dir))
     hydra.initialize_config_dir(config_dir)
     cfg = hydra.compose(config_name=config_name)
     return cfg
+
 
 def get_keypoint_names(csv_data: pd.DataFrame, header_rows: List[int]) -> List[str]:
     """ Get the names of the keypoints from the csv file.
@@ -234,4 +238,56 @@ def get_keypoint_names(csv_data: pd.DataFrame, header_rows: List[int]) -> List[s
         keypoint_names = [c[1] for c in csv_data.columns[1::2]]
     elif header_rows == [1,2]:
         keypoint_names = [c[0] for c in csv_data.columns[1::2]]
+    else:
+        raise NotImplementedError
     return keypoint_names
+
+
+def update_loss_config(
+        cfg: Union[dict, DictConfig],
+        loss_type: str,
+        loss_weight: float,
+        loss_weight_dict: Optional[dict] = None):
+    """Helper function to update loss config given a loss type and loss weights."""
+
+    if loss_type == 'pca_mixed':
+        cfg.model.losses_to_use = ['pca_singleview', 'pca_multiview']
+        cfg.losses['pca_singleview'].log_weight = loss_weight
+        cfg.losses['pca_multiview'].log_weight = loss_weight
+    elif loss_type == 'single_uni':
+        cfg.model.losses_to_use = ['pca_singleview', 'unimodal_mse']
+        cfg.losses['pca_singleview'].log_weight = loss_weight
+        cfg.losses['unimodal_mse'].log_weight = loss_weight
+    elif loss_type == 'single_temp':
+        cfg.model.losses_to_use = ['pca_singleview', 'temporal']
+        cfg.losses['pca_singleview'].log_weight = loss_weight
+        cfg.losses['temporal'].log_weight = loss_weight
+    elif loss_type == 'multi_temp':
+        cfg.model.losses_to_use = ['pca_multiview', 'temporal']
+        cfg.losses['pca_multiview'].log_weight = loss_weight
+        cfg.losses['temporal'].log_weight = loss_weight
+    elif loss_type == 'single_uni_temp':
+        cfg.model.losses_to_use = ['pca_singleview', 'unimodal_mse', 'temporal']
+        cfg.losses['pca_singleview'].log_weight = loss_weight
+        cfg.losses['unimodal_mse'].log_weight = loss_weight
+        cfg.losses['temporal'].log_weight = loss_weight
+    elif loss_type == 'all':
+        # find all losses
+        if loss_weight_dict is not None:
+            loss_list = []
+            for loss in loss_weight_dict.keys():
+                if loss == 'supervised' or loss == 'all':
+                    continue
+                else:
+                    loss_list.append(l)
+        else:
+            loss_list = ["unimodal_mse", "temporal", "pca_multiview", "pca_singleview"]
+        cfg.model.losses_to_use = loss_list
+        # update weights to be the same
+        for loss in cfg.model.losses_to_use:
+            cfg.losses[loss].log_weight = loss_weight_dict[loss]
+    else:
+        cfg.model.losses_to_use = [loss_type]
+        cfg.losses[loss_type].log_weight = loss_weight
+
+    return cfg
