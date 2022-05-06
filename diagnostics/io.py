@@ -164,7 +164,7 @@ def collect_all_model_paths(base_dir):
     return model_paths
 
 
-def get_best_version_from_tb_logs(version_list, metric="val_loss"):
+def get_best_version_from_tb_logs(version_list, metric="val_supervised_loss"):
     """Given a list of model directories, find best version based on provided metric."""
     from tensorboard.backend.event_processing.event_accumulator import EventAccumulator
     import glob
@@ -279,7 +279,7 @@ def update_loss_config(
                 if loss == 'supervised' or loss == 'all':
                     continue
                 else:
-                    loss_list.append(l)
+                    loss_list.append(loss)
         else:
             loss_list = ["unimodal_mse", "temporal", "pca_multiview", "pca_singleview"]
         cfg.model.losses_to_use = loss_list
