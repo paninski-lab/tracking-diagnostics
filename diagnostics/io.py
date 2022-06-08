@@ -42,6 +42,8 @@ def get_model_params(cfg):
         "model_type": cfg["model"]["model_type"],
         "model_name": cfg["model"]["model_name"],
     }
+    if cfg_less["model_type"] == "heatmap":
+        cfg_less["heatmap_loss_type"] = cfg["model"]["heatmap_loss_type"]
 
     semi_supervised = check_if_semi_supervised(cfg.model.losses_to_use)
     if semi_supervised:
@@ -61,6 +63,10 @@ def get_model_params(cfg):
             cfg_less["unimodal_mse"] = cfg["losses"]["unimodal_mse"]
         if "unimodal_wasserstein" in cfg_less["losses_to_use"]:
             cfg_less["unimodal_wasserstein"] = cfg["losses"]["unimodal_wasserstein"]
+        if "unimodal_kl" in cfg_less["losses_to_use"]:
+            cfg_less["unimodal_kl"] = cfg["losses"]["unimodal_kl"]
+        if "unimodal_js" in cfg_less["losses_to_use"]:
+            cfg_less["unimodal_js"] = cfg["losses"]["unimodal_js"]
     else:
         cfg_less["losses_to_use"] = []
 
@@ -138,6 +144,8 @@ def find_model_versions(base_dir, cfg, verbose=False, keys_to_sweep=[]):
                             )
                     print()
         except FileNotFoundError:
+            continue
+        except KeyError:
             continue
 
     if verbose and len(version_list) == 0:
