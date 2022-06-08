@@ -1,30 +1,21 @@
-"""
-# My first app
-I'd read the dataframes, split, get body part names, concatenate, then plot as I did
-maybe left sidebar picks which datasets to read from a folder?
-likelihood
-TODO: add a csv file uploader, multifile
-https://docs.streamlit.io/library/api-reference/widgets/st.file_uploader
-uploaded_files = st.file_uploader("Choose a CSV file", accept_multiple_files=True)
-for uploaded_file in uploaded_files:
-     bytes_data = uploaded_file.read()
-     st.write("filename:", uploaded_file.name)
-     st.write(bytes_data)
+"""Analyze predictions on video data.
 
-after you've uploaded 3 files, you give each model a name, manually
-https://docs.streamlit.io/library/api-reference/widgets/st.text_input
+Users select an arbitrary number of csvs (one per model) from their file system
 
-display three such
+The app creates plots for:
+- time series/likelihoods of a selected keypoint (x or y coord) for each model
+- boxplot/histogram of temporal norms for each model
+- boxplot/histogram of multiview pca reprojection errors for each model
 
 to run from command line:
-> streamlit run /path/to/video_app.py
+> streamlit run /path/to/video_diagnostics.py
 
 """
 
 
-from email.mime import base
-from urllib.parse import _NetlocResultMixinBase
-from grpc import dynamic_ssl_server_credentials
+# from email.mime import base
+# from urllib.parse import _NetlocResultMixinBase
+# from grpc import dynamic_ssl_server_credentials
 import streamlit as st
 import pandas as pd
 import plotly.express as px
@@ -44,126 +35,10 @@ from lightning_pose.utils.scripts import (
 
 from diagnostics.handler import ModelHandler
 from diagnostics.metrics import pca_reprojection_error_per_keypoint
-
-
-def strip_cols_append_name(df: pd.DataFrame, name: str) -> pd.DataFrame:
-    df.columns = ["_".join(col).strip() for col in df.columns.values]
-    df.columns = [col + "_" + name for col in df.columns.values]
-    return df
-
-
-@st.cache
-def concat_dfs(dframes: Dict[str, pd.DataFrame]) -> Tuple[pd.DataFrame, List[str]]:
-    counter = 0
-    for model_name, dframe in dframes.items():
-        if counter == 0:
-            df_concat = dframe.copy()
-            # base_colnames = list(df_concat.columns.levels[0])  # <-- sorts names, bad!
-            base_colnames = list([c[0] for c in df_concat.columns[1::3]])
-            df_concat = strip_cols_append_name(df_concat, model_name)
-        else:
-            df = strip_cols_append_name(dframe.copy(), model_name)
-            df_concat = pd.concat([df_concat, df], axis=1)
-        counter += 1
-    return df_concat, base_colnames
-
-
-@st.cache
-def compute_temporal_norms(
-    df: pd.DataFrame, bodypart_names: List[str], model_name: str
-) -> pd.DataFrame:
-    # compute the norm just for one dataframe
-    df_norms = pd.DataFrame(columns=bodypart_names)
-    diffs = df.diff(periods=1)  # not using .abs
-    for col in bodypart_names:  # loop over bodyparts
-        df_norms[col] = diffs[col][["x", "y"]].apply(
-            np.linalg.norm, axis=1
-        )  # norm of the difference for that bodypart
-    df_norms["model_name"] = model_name
-    df_norms["mean"] = df_norms[bodypart_names[:-1]].mean(axis=1)
-    return df_norms
-
-
-@st.cache
-def compute_norms_per_dataset(
-    dfs: Dict[str, pd.DataFrame], bodypart_names: List[str]
-) -> pd.DataFrame:
-
-    colnames = [*bodypart_names, "model_name"]
-    concat_norm_df = pd.DataFrame(columns=colnames)
-    for model_name, df in dfs.items():
-        df_norm = compute_temporal_norms(df, bodypart_names, model_name)
-        concat_norm_df = pd.concat([concat_norm_df, df_norm], axis=0)
-    return concat_norm_df
-
-
-@st.cache(hash_funcs={PCALoss: lambda _: None})  # streamlit doesn't know how to hash PCALoss
-def compute_pcamv_reprojection_error(
-    df: pd.DataFrame, bodypart_names: List[str], model_name: str, cfg: dict, pca_loss: PCALoss,
-) -> pd.DataFrame:
-
-    # TODO: copied from diagnostics.handler.Handler::compute_metric; figure out a way to share
-    tmp = df.to_numpy().reshape(df.shape[0], -1, 3)
-    keypoints_pred = tmp[:, :, :2]  # shape (samples, n_keypoints, 2)
-
-    keypoints_pred = ModelHandler.resize_keypoints(cfg, keypoints_pred=keypoints_pred)
-
-    original_dims = keypoints_pred.shape
-    mirrored_column_matches = pca_loss.pca.mirrored_column_matches
-    # adding a reshaping below since the loss class expects a single last dim with num_keypoints*2
-    results_raw = pca_reprojection_error_per_keypoint(
-        pca_loss, keypoints_pred=keypoints_pred.reshape(keypoints_pred.shape[0], -1))
-    results_raw = results_raw.reshape(
-        -1,
-        len(mirrored_column_matches[0]),
-        len(mirrored_column_matches),
-    )  # batch X num_used_keypoints X num_views
-
-    # next, put this back into a full keypoints pred arr
-    results = np.nan * np.zeros((original_dims[0], original_dims[1]))
-    for c, cols in enumerate(mirrored_column_matches):
-        results[:, cols] = results_raw[:, :, c]  # just the columns belonging to view c
-
-    # collect results
-    df_rpe = pd.DataFrame(columns=bodypart_names)
-    for c, col in enumerate(bodypart_names):  # loop over bodyparts
-        df_rpe[col] = results[:, c]
-    df_rpe["model_name"] = model_name
-    df_rpe["mean"] = df_rpe[bodypart_names[:-1]].mean(axis=1)
-    return df_rpe
-
-
-@st.cache(hash_funcs={PCALoss: lambda _: None})  # streamlit doesn't know how to hash PCALoss
-def compute_pcamv_rpe_per_dataset(
-    dfs: Dict[str, pd.DataFrame], bodypart_names: List[str], cfg: dict, pca_loss: PCALoss,
-) -> pd.DataFrame:
-
-    colnames = [*bodypart_names, "model_name"]
-    concat_pcamv_df = pd.DataFrame(columns=colnames)
-    for model_name, df in dfs.items():
-        df_ = compute_pcamv_reprojection_error(df, bodypart_names, model_name, cfg, pca_loss)
-        concat_pcamv_df = pd.concat([concat_pcamv_df, df_], axis=0)
-    return concat_pcamv_df
-
-
-@st.cache(hash_funcs={PCALoss: lambda _: None})  # streamlit doesn't know how to hash PCALoss
-def build_pcamv_loss_object(cfg):
-    data_dir, video_dir = return_absolute_data_paths(data_cfg=cfg.data)
-    imgaug_transform = get_imgaug_transform(cfg=cfg)
-    dataset = get_dataset(cfg=cfg, data_dir=data_dir, imgaug_transform=imgaug_transform)
-    data_module = get_data_module(cfg=cfg, dataset=dataset, video_dir=video_dir)
-    data_module.setup()
-    loss_factories = get_loss_factories(cfg=cfg, data_module=data_module)
-    pca_loss = loss_factories["unsupervised"].loss_instance_dict["pca_multiview"]
-    return pca_loss
-
-
-def get_full_name(bodypart: str, coordinate: str, model: str) -> str:
-    return "_".join([bodypart, coordinate, model])
-
-
-def get_col_names(bodypart: str, coordinate: str, models: List[str]) -> List[str]:
-    return [get_full_name(bodypart, coordinate, model) for model in models]
+from diagnostics.streamlit import strip_cols_append_name, get_col_names, get_full_name
+from diagnostics.streamlit import concat_dfs
+from diagnostics.streamlit import compute_metric_per_dataset
+from diagnostics.streamlit import build_pcamv_loss_object
 
 
 st.title("Video Diagnostics")
@@ -265,7 +140,8 @@ if len(uploaded_files) > 0:  # otherwise don't try to proceed
 
     st.header("Temporal loss diagnostics")
 
-    big_df_temp_norm = compute_norms_per_dataset(dfs=dframes, bodypart_names=bodypart_names)
+    big_df_temp_norm = compute_metric_per_dataset(
+        dfs=dframes, metric="temporal_norm", bodypart_names=bodypart_names)
     disp_temp_norms_head = st.checkbox("Display norms DataFrame")
     if disp_temp_norms_head:
         st.write("Temporal norms dataframe:")
@@ -328,8 +204,9 @@ if len(uploaded_files) > 0:  # otherwise don't try to proceed
 
         # compute pca loss
         pca_loss = build_pcamv_loss_object(cfg_pcamv)
-        big_df_pcamv = compute_pcamv_rpe_per_dataset(
-            dfs=dframes, bodypart_names=bodypart_names, cfg=cfg_pcamv, pca_loss=pca_loss)
+        big_df_pcamv = compute_metric_per_dataset(
+            dfs=dframes, metric="pca_mv", bodypart_names=bodypart_names, cfg=cfg_pcamv,
+            pca_loss=pca_loss)
 
         # show violin per bodypart
         bodypart_pcamv = st.selectbox(
