@@ -44,8 +44,11 @@ def compute_metric_per_dataset(
     dfs: Dict[str, pd.DataFrame], metric: str, bodypart_names: List[str], **kwargs
 ) -> pd.DataFrame:
 
-    colnames = [*bodypart_names, "model_name"]
-    concat_df = pd.DataFrame(columns=colnames)
+    # colnames = [*bodypart_names, "model_name"]
+    # if "labels" in kwargs:
+    #     colnames += ["imag_file"]
+    # concat_df = pd.DataFrame(columns=colnames)
+    concat_dfs = []
     for model_name, df in dfs.items():
         if metric == "rmse":
             df_ = compute_pixel_error(df, bodypart_names, model_name, **kwargs)
@@ -55,9 +58,11 @@ def compute_metric_per_dataset(
             df_ = compute_pcamv_reprojection_error(df, bodypart_names, model_name, **kwargs)
         else:
             raise NotImplementedError("%s is not a supported metric" % metric)
-        # concat_df = pd.concat([concat_df, df_.reset_index(inplace=True, drop=True)], axis=0)
-        concat_df = pd.concat([concat_df, df_], axis=0, ignore_index=True)
-    return concat_df
+        # concat_df = pd.concat([concat_df, df_.reset_index(inplace=True, drop=False)], axis=0)
+        # concat_df = pd.concat([concat_df, df_], axis=0, ignore_index=False)
+    # return concat_df
+        concat_dfs.append(df_)
+    return pd.concat(concat_dfs)
 
 
 @st.cache
@@ -81,6 +86,7 @@ def compute_pixel_error(
     df_["model_name"] = model_name
     df_["mean"] = df_[bodypart_names[:-1]].mean(axis=1)
     df_["set"] = set
+    df_["img_file"] = labels.index
 
     return df_
 
