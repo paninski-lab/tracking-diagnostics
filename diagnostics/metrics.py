@@ -1,8 +1,10 @@
 """A collection of functions to assess pose estimation performance."""
 
-from typing import Optional
 import numpy as np
+from sklearn.metrics import precision_score, recall_score
 import torch
+from typing import Optional
+
 from lightning_pose.utils.pca import compute_pca_reprojection_error
 
 
@@ -75,6 +77,67 @@ def rmse(keypoints_true, keypoints_pred):
     return pixel_error
     # mse = np.square(keypoints_true - keypoints_pred)
     # return np.sqrt(0.5 * (mse[:, :, 0] + mse[:, :, 1]))
+
+
+def average_precision(
+        keypoints_true, keypoints_pred, scale, kappa, thresh=np.arange(0.5, 1.0, 0.05)):
+    """Average Precision, as described in https://cocodataset.org/#keypoints-eval.
+
+    Note this is similar to sklearns function sklearn.metrics.average_precision_score except it
+    gives the user control over which thresholds to use for computation.
+
+    Args:
+        keypoints_true: np.ndarray
+            shape (samples, n_keypoints, 2)
+        keypoints_pred: np.ndarray
+            shape (samples, n_keypoints, 2)
+        scale: float
+        kappa: float
+        thresh: array-like
+            array of OKS thresholds used for computing mAP
+
+    Returns:
+        np.ndarray, shape (n_keypoints,)
+
+    """
+
+    # flip thresh if necessary
+    if not np.all(np.diff(thresh) < 0):
+        thresh = np.flipud(thresh)
+
+    # compute similarity based on this distance and other scaling factors
+    similarity = OKS(keypoints_true, keypoints_pred, scale, kappa)
+
+    if len(thresh) <= 1:
+        raise ValueError("thresh must be an array with at least 2 elements.")
+
+    precision = np.zeros((len(thresh), keypoints_true.shape[1]))
+    recall = np.zeros_like(precision)
+    for t, thresh_ in enumerate(thresh):
+        for kp in range(keypoints_true.shape[1]):
+            # define binary predictions by thresholding
+            y_score = similarity[:, kp] >= thresh_
+            # define ground truth as any keypoint that is labeled (so similarity is not nan)
+            y_true = ~np.isnan(similarity[:, kp])
+            # compute precision-recall
+            precision[t, kp] = precision_score(y_true[y_true], y_score[y_true])
+            recall[t, kp] = recall_score(y_true[y_true], y_score[y_true])
+
+    ap = np.sum(np.diff(recall, axis=0) * precision[1:], axis=0)
+
+    return ap
+
+
+def OKS(keypoints_true, keypoints_pred, scale, kappa):
+    """Object keypoint similarity metric; used to compute mAP.
+
+    This metric is a similarity measure that is analagous to the intersection over union (IoU)
+    metric commonly used in object detection.
+
+    """
+    # compute distance between true and predicted keypoints
+    dist = np.linalg.norm(keypoints_true - keypoints_pred, axis=2)
+    return np.exp(-np.square(dist) / (2.0 * np.square(scale * kappa)))
 
 
 def unimodal_mse(heatmaps_pred, img_height, img_width, downsample_factor):

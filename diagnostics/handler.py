@@ -11,6 +11,8 @@ from diagnostics.io import find_model_versions
 from diagnostics.metrics import (
     pca_reprojection_error_per_keypoint,
     rmse,
+    OKS,
+    average_precision,
     temporal_norm,
     unimodal_mse,
 )
@@ -52,12 +54,14 @@ class ModelHandler(object):
             metric:
                 labeled data only:
                     "rmse": root mean square error between true and pred keypoints
+                    "oks": object keypoint similarity
+                    "average_precision": returns a value *per keypoint*, not per sample/keypoint
                 unlabeled data only:
                     "temporal_norm": keypoint-wise norm between successive time points
                 either:
-                    "pca_multiview": error between (2*num_views)-D preds and their 3D-PCA reprojection
+                    "pca_multiview": error between (2*num_views)-D preds and their 3D-PCA reproj
                     "pca_singleview: error between preds and K-dim PCA reconstruction
-                    "unimodal_mse":
+                    "unimodal_mse": mse between predicted heatmap and its unimodal ideal
             pred_file: absolute path of predictions csv file; if a relative path, the
                 file is assumed to be in the model directory
             video_file: absolute path to video file; if pred_file does not exist, the
@@ -68,6 +72,9 @@ class ModelHandler(object):
             **kwargs: the following are required for the indicated loss:
                 "rmse":
                     keypoints_true: np.ndarray
+                "oks":
+                    scale: float
+                    kappa: np.ndarray of shape (n_keypoints,)
                 "temporal_norm":
                 "pca_reproj":
                     pca_loss_obj: lightning_pose.utils.pca.KeypointPCA object
@@ -152,9 +159,6 @@ class ModelHandler(object):
             else:
                 raise FileNotFoundError("Did not find requested file at %s" % pred_file)
 
-        # check input
-        check_kwargs(kwargs, metric)
-
         # load predictions
         pred_df = pd.read_csv(pred_file, header=[0, 1, 2], index_col=0)
         if pred_df.keys()[-1][0] == "set":
@@ -169,12 +173,21 @@ class ModelHandler(object):
         keypoints_pred = tmp[:, :, :2]  # shape (samples, n_keypoints, 2)
         confidences = tmp[:, :, -1]  # shape (samples, n_keypoints)
 
+        # check input
+        check_kwargs(kwargs, metric, is_video)
+
         # compute metric
         if metric == "rmse":
-            print("Computing RMSE...")
-            if is_video:
-                raise ValueError("cannot compute RMSE on unlabeled video data!")
             results = rmse(kwargs["keypoints_true"], keypoints_pred)
+
+        elif metric == "oks":
+            results = OKS(
+                kwargs["keypoints_true"], keypoints_pred, kwargs["scale"], kwargs["kappa"])
+
+        # elif metric == "average_precision":
+        #     results = average_precision(
+        #         kwargs["keypoints_true"], keypoints_pred, kwargs["scale"], kwargs["kappa"],
+        #         kwargs.get("thresh", np.arange(0.5, 1.0, 0.05)))
 
         elif metric == "pca_singleview" or metric == "pca_multiview":
 
@@ -219,7 +232,7 @@ class ModelHandler(object):
                         :, :, c
                     ]  # just the columns belonging to view c
 
-            if metric == "pca_singleview":
+            elif metric == "pca_singleview":
                 # Dan commented this thing out in favor of the loss used for training.
                 # results = pca_reprojection_error(
                 #     keypoints_pred.reshape(
@@ -262,8 +275,6 @@ class ModelHandler(object):
             )
 
         elif metric == "temporal_norm":
-            if not is_video:
-                raise ValueError("cannot compute temporal norm on labeled data!")
             results = temporal_norm(keypoints_pred)
             # add nans into first row
             results = np.vstack([np.nan * np.zeros((1, results.shape[1])), results])
@@ -281,19 +292,40 @@ class ModelHandler(object):
         return results
 
 
-def check_kwargs(kwargs, metric):
+def check_kwargs(kwargs, metric, is_video):
     """Ensure kwargs for metric computation have correct entries."""
 
     if metric == "rmse":
         req_kwargs = ["keypoints_true"]
+        req_video = False
+        req_labels = True
+    elif metric == "oks":
+        req_kwargs = ["keypoints_true", "kappa", "scale"]
+        req_video = False
+        req_labels = True
+    elif metric == "average_precision":
+        req_kwargs = ["keypoints_true", "kappa", "scale"]
+        req_video = False
+        req_labels = True
     elif metric == "pca_multiview" or metric == "pca_singleview":
         req_kwargs = ["pca_loss_obj"]
+        req_video = False
+        req_labels = False
     elif metric == "unimodal_mse":
         req_kwargs = []
+        req_video = False
+        req_labels = False
     elif metric == "temporal_norm":
         req_kwargs = []
+        req_video = True
+        req_labels = False
     else:
         raise NotImplementedError
+
+    if req_labels and is_video:
+        raise ValueError("cannot compute %s on unlabeled video data!" % metric)
+    if req_video and not is_video:
+        raise ValueError("cannot compute %s on labeled data!" % metric)
 
     for req_kwarg in req_kwargs:
         if req_kwarg not in kwargs.keys():
