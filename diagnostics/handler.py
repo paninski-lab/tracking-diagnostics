@@ -75,6 +75,9 @@ class ModelHandler(object):
                     heatmap_file: absolute path to heatmap h5 file; if not present, the
                         file is assumed to be in
                         `model_directory/heatmaps_and_images/heatmaps.h5`
+                other:
+                    "datamodule": used to predict new dataset if pred_file does not exist
+
 
 
         Returns:

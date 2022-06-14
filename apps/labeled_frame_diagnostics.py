@@ -52,6 +52,20 @@ def get_df_box(df_orig, keypoint_names, model_names):
     return df_box
 
 
+@st.cache
+def get_df_scatter(df_0, df_1, data_type):
+    df_scatters = []
+    for keypoint in keypoint_names:
+        df_scatters.append(pd.DataFrame({
+            "img_file": df_0.img_file[df_0.set == data_type],
+            "keypoint": keypoint,
+            model_0: df_0[keypoint][df_0.set == data_type],
+            model_1: df_1[keypoint][df_1.set == data_type],
+        }))
+    df_scatter = pd.concat(df_scatters)
+    return df_scatter
+
+
 st.title("Labeled Frame Diagnostics")
 
 st.sidebar.header("Data Settings")
@@ -223,15 +237,7 @@ if label_file is not None and len(prediction_files) > 0:  # otherwise don't try 
 
         if keypoint_to_plot == "ALL":
 
-            df_scatters = []
-            for keypoint in keypoint_names:
-                df_scatters.append(pd.DataFrame({
-                    "img_file": df_tmp0.img_file[df_tmp0.set == data_type],
-                    "keypoint": keypoint,
-                    model_0: df_tmp0[keypoint][df_tmp0.set == data_type],
-                    model_1: df_tmp1[keypoint][df_tmp1.set == data_type],
-                }))
-            df_scatter = pd.concat(df_scatters)
+            df_scatter = get_df_scatter(df_tmp0, df_tmp1, data_type)
 
             fig_scatter = px.scatter(
                 df_scatter,
