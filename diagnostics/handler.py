@@ -153,7 +153,7 @@ class ModelHandler(object):
                     data_module=kwargs["datamodule"],
                     ckpt_file=ckpt_file,
                     preds_file=pred_file,
-                    heatmap_file=kwargs["heatmap_file"],
+                    # heatmap_file=kwargs["heatmap_file"],
                     gpu_id=self.cfg.training.gpu_id,
                 )
             else:
