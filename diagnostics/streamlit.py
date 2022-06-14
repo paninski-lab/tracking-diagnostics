@@ -1,5 +1,6 @@
 """Utility functions for streamlit apps."""
 
+import numpy as np
 import pandas as pd
 import streamlit as st
 from typing import List, Dict, Tuple, Optional
