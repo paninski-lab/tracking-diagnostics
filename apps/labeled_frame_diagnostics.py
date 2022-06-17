@@ -3,7 +3,8 @@
 Users select an arbitrary number of csvs (one per model) from their file system
 
 The app creates plots for:
-- barplot of pixel errors for each model
+- plot of a selected metric (e.g. pixel errors) for each model (bar/box/violin/etc)
+- scatterplot of a selected metric between two models
 
 to run from command line:
 > streamlit run /path/to/labeled_frame_diagnostics.py
@@ -35,6 +36,12 @@ from diagnostics.streamlit import strip_cols_append_name, get_col_names, get_ful
 from diagnostics.streamlit import concat_dfs
 from diagnostics.streamlit import compute_metric_per_dataset
 
+
+# TODO
+# - add new metrics (pca)
+# - refactor df making
+# - save as pdf / eps
+# - show image on hover?
 
 @st.cache
 def get_df_box(df_orig, keypoint_names, model_names):
@@ -89,8 +96,18 @@ if label_file is not None and len(prediction_files) > 0:  # otherwise don't try 
 
     dframes = {}
     for prediction_file in prediction_files:
-        dframes[prediction_file.name] = pd.read_csv(prediction_file, header=[1, 2], index_col=0)
-        data_types = dframes[prediction_file.name].iloc[:, -1].unique()
+        if prediction_file.name in dframes.keys():
+            # append new integer to duplicate filenames
+            idx = 0
+            new_name = "%s_0" % prediction_file.name
+            while new_name in dframes.keys():
+                idx += 1
+                new_name = "%s_%i" % (prediction_file.name, idx)
+            filename = new_name
+        else:
+            filename = prediction_file.name
+        dframes[filename] = pd.read_csv(prediction_file, header=[1, 2], index_col=0)
+        data_types = dframes[filename].iloc[:, -1].unique()
         # if dframes[prediction_file.name].keys()[-1][0] != "set":
         #     raise ValueError("Final column of %s must use \"set\" header" % prediction_file.name)
 
