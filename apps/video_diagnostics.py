@@ -57,7 +57,17 @@ if len(uploaded_files) > 0:  # otherwise don't try to proceed
     # read dataframes into a dict with keys=filenames
     dframes = {}
     for uploaded_file in uploaded_files:
-        dframes[uploaded_file.name] = pd.read_csv(uploaded_file, header=[1, 2], index_col=0)
+        if uploaded_file.name in dframes.keys():
+            # append new integer to duplicate filenames
+            idx = 0
+            new_name = "%s_0" % uploaded_file.name
+            while new_name in dframes.keys():
+                idx += 1
+                new_name = "%s_%i" % (uploaded_file.name, idx)
+            filename = new_name
+        else:
+            filename = uploaded_file.name
+        dframes[filename] = pd.read_csv(uploaded_file, header=[1, 2], index_col=0)
 
     # edit modelnames if desired, to simplify plotting
     st.sidebar.write("Model display names (editable)")
