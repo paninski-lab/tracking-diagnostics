@@ -83,6 +83,7 @@ prediction_files: list = st.sidebar.file_uploader(
     "Choose one or more prediction CSV files", accept_multiple_files=True
 )
 
+# col wrap when plotting results from all keypoints
 n_cols = 3
 
 if label_file is not None and len(prediction_files) > 0:  # otherwise don't try to proceed
@@ -132,9 +133,9 @@ if label_file is not None and len(prediction_files) > 0:  # otherwise don't try 
     st.header("Select data to plot")
 
     keypoint_to_plot = st.selectbox(
-        "Pick a single bodypart:",
+        "Pick a single keypoint:",
         pd.Series([*keypoint_names, "mean", "ALL"]),
-        key="bodypart_metric",
+        key="keypoint_metric",
     )
     data_type = st.radio("Select data partition", data_types)
 
@@ -145,7 +146,7 @@ if label_file is not None and len(prediction_files) > 0:  # otherwise don't try 
     st.header("Compare multiple models")
 
     big_df_pix_error = compute_metric_per_dataset(
-        dfs=dframes, metric='rmse', bodypart_names=keypoint_names, labels=dframe_gt)
+        dfs=dframes, metric='rmse', keypoint_names=keypoint_names, labels=dframe_gt)
     # TODO: compute other metrics
 
     # enumerate plotting options
@@ -220,7 +221,7 @@ if label_file is not None and len(prediction_files) > 0:  # otherwise don't try 
         # elif plot_type == "strip":
         #     fig_box = px.strip(big_df_filtered, x="model_name", y=keypoint_to_plot, log_y=log_y)
         # # elif plot_type == "bar":
-        # #     fig_box = px.bar(big_df_filtered, x="model_name", y=bodypart_error, log_y=log_y)
+        # #     fig_box = px.bar(big_df_filtered, x="model_name", y=keypoint_error, log_y=log_y)
         # else:
         #     raise NotImplementedError
         # fig_width = 500

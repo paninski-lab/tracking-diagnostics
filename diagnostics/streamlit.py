@@ -38,31 +38,31 @@ def strip_cols_append_name(df: pd.DataFrame, name: str) -> pd.DataFrame:
     return df
 
 
-def get_full_name(bodypart: str, coordinate: str, model: str) -> str:
-    return "_".join([bodypart, coordinate, model])
+def get_full_name(keypoint: str, coordinate: str, model: str) -> str:
+    return "_".join([keypoint, coordinate, model])
 
 
-def get_col_names(bodypart: str, coordinate: str, models: List[str]) -> List[str]:
-    return [get_full_name(bodypart, coordinate, model) for model in models]
+def get_col_names(keypoint: str, coordinate: str, models: List[str]) -> List[str]:
+    return [get_full_name(keypoint, coordinate, model) for model in models]
 
 
 @st.cache(hash_funcs={PCALoss: lambda _: None})  # streamlit doesn't know how to hash PCALoss
 def compute_metric_per_dataset(
-    dfs: Dict[str, pd.DataFrame], metric: str, bodypart_names: List[str], **kwargs
+    dfs: Dict[str, pd.DataFrame], metric: str, keypoint_names: List[str], **kwargs
 ) -> pd.DataFrame:
 
-    # colnames = [*bodypart_names, "model_name"]
+    # colnames = [*keypoint_names, "model_name"]
     # if "labels" in kwargs:
     #     colnames += ["imag_file"]
     # concat_df = pd.DataFrame(columns=colnames)
     concat_dfs = []
     for model_name, df in dfs.items():
         if metric == "rmse":
-            df_ = compute_pixel_error(df, bodypart_names, model_name, **kwargs)
+            df_ = compute_pixel_error(df, keypoint_names, model_name, **kwargs)
         elif metric == "temporal_norm":
-            df_ = compute_temporal_norms(df, bodypart_names, model_name, **kwargs)
+            df_ = compute_temporal_norms(df, keypoint_names, model_name, **kwargs)
         elif metric == "pca_mv" or metric == "pca_sv":
-            df_ = compute_pca_reprojection_error(df, bodypart_names, model_name, **kwargs)
+            df_ = compute_pca_reprojection_error(df, keypoint_names, model_name, **kwargs)
         else:
             raise NotImplementedError("%s is not a supported metric" % metric)
         # concat_df = pd.concat([concat_df, df_.reset_index(inplace=True, drop=False)], axis=0)
@@ -74,7 +74,7 @@ def compute_metric_per_dataset(
 
 @st.cache
 def compute_pixel_error(
-    df: pd.DataFrame, bodypart_names: List[str], model_name: str, labels: pd.DataFrame,
+    df: pd.DataFrame, keypoint_names: List[str], model_name: str, labels: pd.DataFrame,
 ) -> pd.DataFrame:
 
     # shape (samples, n_keypoints, 2)
@@ -89,11 +89,11 @@ def compute_pixel_error(
     results = rmse(keypoints_true, keypoints_pred)
 
     # collect results
-    df_ = pd.DataFrame(columns=bodypart_names)
-    for c, col in enumerate(bodypart_names):  # loop over bodyparts
+    df_ = pd.DataFrame(columns=keypoint_names)
+    for c, col in enumerate(keypoint_names):  # loop over keypoints
         df_[col] = results[:, c]
     df_["model_name"] = model_name
-    df_["mean"] = df_[bodypart_names[:-1]].mean(axis=1)
+    df_["mean"] = df_[keypoint_names[:-1]].mean(axis=1)
     df_["set"] = set
     df_["img_file"] = labels.index
 
@@ -102,23 +102,23 @@ def compute_pixel_error(
 
 @st.cache
 def compute_temporal_norms(
-    df: pd.DataFrame, bodypart_names: List[str], model_name: str, **kwargs
+    df: pd.DataFrame, keypoint_names: List[str], model_name: str, **kwargs
 ) -> pd.DataFrame:
     # compute the norm just for one dataframe
-    df_norms = pd.DataFrame(columns=bodypart_names)
+    df_norms = pd.DataFrame(columns=keypoint_names)
     diffs = df.diff(periods=1)  # not using .abs
-    for col in bodypart_names:  # loop over bodyparts
+    for col in keypoint_names:  # loop over keypoints
         df_norms[col] = diffs[col][["x", "y"]].apply(
             np.linalg.norm, axis=1
-        )  # norm of the difference for that bodypart
+        )  # norm of the difference for that keypoint
     df_norms["model_name"] = model_name
-    df_norms["mean"] = df_norms[bodypart_names[:-1]].mean(axis=1)
+    df_norms["mean"] = df_norms[keypoint_names[:-1]].mean(axis=1)
     return df_norms
 
 
 @st.cache(hash_funcs={PCALoss: lambda _: None})  # streamlit doesn't know how to hash PCALoss
 def compute_pca_reprojection_error(
-    df: pd.DataFrame, bodypart_names: List[str], model_name: str, cfg: dict, pca_loss: PCALoss,
+    df: pd.DataFrame, keypoint_names: List[str], model_name: str, cfg: dict, pca_loss: PCALoss,
 ) -> pd.DataFrame:
 
     # TODO: copied from diagnostics.handler.Handler::compute_metric; figure out a way to share
@@ -156,11 +156,11 @@ def compute_pca_reprojection_error(
         results[:, pca_cols] = results_
 
     # collect results
-    df_rpe = pd.DataFrame(columns=bodypart_names)
-    for c, col in enumerate(bodypart_names):  # loop over bodyparts
+    df_rpe = pd.DataFrame(columns=keypoint_names)
+    for c, col in enumerate(keypoint_names):  # loop over keypoints
         df_rpe[col] = results[:, c]
     df_rpe["model_name"] = model_name
-    df_rpe["mean"] = df_rpe[bodypart_names[:-1]].mean(axis=1)
+    df_rpe["mean"] = df_rpe[keypoint_names[:-1]].mean(axis=1)
     return df_rpe
 
 

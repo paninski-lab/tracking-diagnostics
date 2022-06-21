@@ -114,7 +114,7 @@ if len(uploaded_files) > 0:  # otherwise don't try to proceed
         dframes[n_name] = dframes.pop(o_name)
 
     # concat dataframes, collapsing hierarchy and making df fatter.
-    df_concat, bodypart_names = concat_dfs(dframes)
+    df_concat, keypoint_names = concat_dfs(dframes)
 
     # ---------------------------------------------------
     # plot traces
@@ -130,9 +130,9 @@ if len(uploaded_files) > 0:  # otherwise don't try to proceed
     models = st.multiselect(
         "Pick models:", pd.Series(list(dframes.keys())), default=list(dframes.keys())
     )
-    bodypart = st.selectbox("Pick a single bodypart:", pd.Series(bodypart_names))
+    keypoint = st.selectbox("Pick a single keypoint:", pd.Series(keypoint_names))
     coordinate = st.radio("Coordinate:", pd.Series(["x", "y"]))
-    cols = get_col_names(bodypart, coordinate, models)
+    cols = get_col_names(keypoint, coordinate, models)
 
     colors = px.colors.qualitative.Plotly
 
@@ -173,7 +173,7 @@ if len(uploaded_files) > 0:  # otherwise don't try to proceed
     fig_traces['layout']['yaxis']['title'] = "%s coordinate" % coordinate
     fig_traces['layout']['yaxis2']['title'] = "confidence"
     fig_traces.update_layout(
-        width=800, height=600, title_text="Timeseries of %s (%s)" % (bodypart, coordinate))
+        width=800, height=600, title_text="Timeseries of %s (%s)" % (keypoint, coordinate))
     st.plotly_chart(fig_traces)
 
     # ---------------------------------------------------
@@ -185,13 +185,13 @@ if len(uploaded_files) > 0:  # otherwise don't try to proceed
     y_label_tn = "Temporal Norm (pix)"
 
     big_df_temp_norm = compute_metric_per_dataset(
-        dfs=dframes, metric="temporal_norm", bodypart_names=bodypart_names)
+        dfs=dframes, metric="temporal_norm", keypoint_names=keypoint_names)
     # disp_temp_norms_head = st.checkbox("Display norms DataFrame")
     # if disp_temp_norms_head:
     #     st.write("Temporal norms dataframe:")
     #     st.write(big_df_temp_norm.head())
 
-    # plot diagnostic averaged overall all bodyparts
+    # plot diagnostic averaged overall all keypoints
     plot_type_tn = st.selectbox(
         "Pick a plot type:", ["box", "boxen", "bar", "violin", "strip"], key="plot_type_tn")
     plot_scale_tn = st.radio("Select y-axis scale", ["linear", "log"], key="plot_scale_tn")
@@ -201,31 +201,31 @@ if len(uploaded_files) > 0:  # otherwise don't try to proceed
         y_label=y_label_tn, title="Average over all keypoints", plot_type=plot_type_tn)
     st.pyplot(fig_cat_tn)
 
-    # select bodypart to plot
-    bodypart_temp_norm = st.selectbox(
-        "Pick a single bodypart:", pd.Series([*bodypart_names, "mean"]), key="bodypart_temp_norm",
+    # select keypoint to plot
+    keypoint_temp_norm = st.selectbox(
+        "Pick a single keypoint:", pd.Series([*keypoint_names, "mean"]), key="keypoint_temp_norm",
     )
 
-    # show boxplot per bodypart
+    # show boxplot per keypoint
     fig_box_tn = make_plotly_catplot(
-        x="model_name", y=bodypart_temp_norm, data=big_df_temp_norm, x_label=x_label,
-        y_label=y_label_tn, title=bodypart_temp_norm, plot_type="box")
+        x="model_name", y=keypoint_temp_norm, data=big_df_temp_norm, x_label=x_label,
+        y_label=y_label_tn, title=keypoint_temp_norm, plot_type="box")
     st.plotly_chart(fig_box_tn)
 
-    # show histogram per bodypart
+    # show histogram per keypoint
     fig_hist_tn = make_plotly_catplot(
-        x=bodypart_temp_norm, y=None, data=big_df_temp_norm, x_label=y_label_tn,
-        y_label="Frame count", title=bodypart_temp_norm, plot_type="hist"
+        x=keypoint_temp_norm, y=None, data=big_df_temp_norm, x_label=y_label_tn,
+        y_label="Frame count", title=keypoint_temp_norm, plot_type="hist"
     )
     st.plotly_chart(fig_hist_tn)
 
-    # # per bodypart
+    # # per keypoint
     # df_violin = big_df_norms.melt(id_vars="model_name")
     # fig = px.box(df_violin, x="model_name", y="value", color="variable", points=False)
     # st.plotly_chart(fig)
 
     # ---------------------------------------------------
-    # plot multiview reprojection errors
+    # plot pca reprojection errors
     # ---------------------------------------------------
 
     uploaded_cfg: str = st.sidebar.file_uploader(
@@ -235,6 +235,9 @@ if len(uploaded_files) > 0:  # otherwise don't try to proceed
 
         cfg = DictConfig(yaml.safe_load(uploaded_cfg))
 
+        # ---------------------------------------------------
+        # pca multiview
+        # ---------------------------------------------------
         if cfg.data.get("mirrored_column_matches", None):
 
             st.header("PCA multiview loss diagnostics")
@@ -246,10 +249,10 @@ if len(uploaded_files) > 0:  # otherwise don't try to proceed
             # compute pca loss
             pcamv_loss = build_pca_loss_object(cfg_pcamv)
             big_df_pcamv = compute_metric_per_dataset(
-                dfs=dframes, metric="pca_mv", bodypart_names=bodypart_names, cfg=cfg_pcamv,
+                dfs=dframes, metric="pca_mv", keypoint_names=keypoint_names, cfg=cfg_pcamv,
                 pca_loss=pcamv_loss)
 
-            # plot diagnostic averaged overall all bodyparts
+            # plot diagnostic averaged overall all keypoints
             plot_type_pcamv = st.selectbox(
                 "Pick a plot type:", ["box", "boxen", "bar", "violin", "strip"],
                 key="plot_type_pcamv")
@@ -262,26 +265,29 @@ if len(uploaded_files) > 0:  # otherwise don't try to proceed
                 plot_type=plot_type_pcamv)
             st.pyplot(fig_cat_pcamv)
 
-            # select bodypart to plot
-            bodypart_pcamv = st.selectbox(
-                "Pick a single bodypart:",
-                pd.Series([*bodypart_names, "mean"]),
-                key="bodypart_pcamv",
+            # select keypoint to plot
+            keypoint_pcamv = st.selectbox(
+                "Pick a single keypoint:",
+                pd.Series([*keypoint_names, "mean"]),
+                key="keypoint_pcamv",
             )
 
-            # show boxplot per bodypart
+            # show boxplot per keypoint
             fig_box_pcamv = make_plotly_catplot(
-                x="model_name", y=bodypart_pcamv, data=big_df_pcamv, x_label=x_label,
-                y_label=y_label_pcamv, title=bodypart_pcamv, plot_type="box")
+                x="model_name", y=keypoint_pcamv, data=big_df_pcamv, x_label=x_label,
+                y_label=y_label_pcamv, title=keypoint_pcamv, plot_type="box")
             st.plotly_chart(fig_box_pcamv)
 
-            # show histogram per bodypart
+            # show histogram per keypoint
             fig_hist_pcamv = make_plotly_catplot(
-                x=bodypart_pcamv, y=None, data=big_df_pcamv, x_label=y_label_pcamv,
-                y_label="Frame count", title=bodypart_pcamv, plot_type="hist"
+                x=keypoint_pcamv, y=None, data=big_df_pcamv, x_label=y_label_pcamv,
+                y_label="Frame count", title=keypoint_pcamv, plot_type="hist"
             )
             st.plotly_chart(fig_hist_pcamv)
 
+        # ---------------------------------------------------
+        # pca singleview
+        # ---------------------------------------------------
         if cfg.data.get("columns_for_singleview_pca", None):
 
             st.header("PCA singleview loss diagnostics")
@@ -293,10 +299,10 @@ if len(uploaded_files) > 0:  # otherwise don't try to proceed
             # compute pca loss
             pcasv_loss = build_pca_loss_object(cfg_pcasv)
             big_df_pcasv = compute_metric_per_dataset(
-                dfs=dframes, metric="pca_sv", bodypart_names=bodypart_names, cfg=cfg_pcasv,
+                dfs=dframes, metric="pca_sv", keypoint_names=keypoint_names, cfg=cfg_pcasv,
                 pca_loss=pcasv_loss)
 
-            # plot diagnostic averaged overall all bodyparts
+            # plot diagnostic averaged overall all keypoints
             plot_type_pcasv = st.selectbox(
                 "Pick a plot type:", ["box", "boxen", "bar", "violin", "strip"],
                 key="plot_type_pcasv")
@@ -309,22 +315,22 @@ if len(uploaded_files) > 0:  # otherwise don't try to proceed
                 plot_type=plot_type_pcasv)
             st.pyplot(fig_cat_pcasv)
 
-            # select bodypart to plot
-            bodypart_pcasv = st.selectbox(
-                "Pick a single bodypart:",
-                pd.Series([*bodypart_names, "mean"]),
-                key="bodypart_pcasv",
+            # select keypoint to plot
+            keypoint_pcasv = st.selectbox(
+                "Pick a single keypoint:",
+                pd.Series([*keypoint_names, "mean"]),
+                key="keypoint_pcasv",
             )
 
-            # show boxplot per bodypart
+            # show boxplot per keypoint
             fig_box_pcasv = make_plotly_catplot(
-                x="model_name", y=bodypart_pcasv, data=big_df_pcasv, x_label=x_label,
-                y_label=y_label_pcasv, title=bodypart_pcasv, plot_type="box")
+                x="model_name", y=keypoint_pcasv, data=big_df_pcasv, x_label=x_label,
+                y_label=y_label_pcasv, title=keypoint_pcasv, plot_type="box")
             st.plotly_chart(fig_box_pcasv)
 
-            # show histogram per bodypart
+            # show histogram per keypoint
             fig_hist_pcasv = make_plotly_catplot(
-                x=bodypart_pcasv, y=None, data=big_df_pcasv, x_label=y_label_pcasv,
-                y_label="Frame count", title=bodypart_pcasv, plot_type="hist"
+                x=keypoint_pcasv, y=None, data=big_df_pcasv, x_label=y_label_pcasv,
+                y_label="Frame count", title=keypoint_pcasv, plot_type="hist"
             )
             st.plotly_chart(fig_hist_pcasv)
