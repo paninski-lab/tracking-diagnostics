@@ -27,18 +27,10 @@ import os
 from typing import List, Dict, Tuple, Optional
 import yaml
 
-from lightning_pose.losses.losses import PCALoss
-from lightning_pose.utils.io import return_absolute_data_paths
-from lightning_pose.utils.scripts import (
-    get_imgaug_transform, get_dataset, get_data_module, get_loss_factories,
-)
-
-from diagnostics.handler import ModelHandler
-from diagnostics.metrics import pca_reprojection_error_per_keypoint
-from diagnostics.streamlit import strip_cols_append_name, get_col_names, get_full_name
+from diagnostics.streamlit import get_col_names
 from diagnostics.streamlit import concat_dfs
 from diagnostics.streamlit import compute_metric_per_dataset
-from diagnostics.streamlit import build_pcamv_loss_object
+from diagnostics.streamlit import build_pca_loss_object
 
 
 st.title("Video Diagnostics")
@@ -171,23 +163,23 @@ if len(uploaded_files) > 0:  # otherwise don't try to proceed
         key="bodypart_temp_norm",
     )
 
-    fig_box = px.box(big_df_temp_norm, x="model_name", y=bodypart_temp_norm)
-    fig_box.update_layout(
+    fig_pcamv_box = px.box(big_df_temp_norm, x="model_name", y=bodypart_temp_norm)
+    fig_pcamv_box.update_layout(
         yaxis_title="Temporal Norm (pix)", xaxis_title="Model Name", title=bodypart_temp_norm,
     )
-    st.plotly_chart(fig_box)
+    st.plotly_chart(fig_pcamv_box)
 
-    fig_hist = px.histogram(
+    fig_pcamv_hist = px.histogram(
         big_df_temp_norm,
         x=bodypart_temp_norm,
         color="model_name",
         marginal="rug",
         barmode="overlay",
     )
-    fig_hist.update_layout(
+    fig_pcamv_hist.update_layout(
         yaxis_title="Frame count", xaxis_title="Temporal Norm (pix)", title=bodypart_temp_norm,
     )
-    st.plotly_chart(fig_hist)
+    st.plotly_chart(fig_pcamv_hist)
     # df_violin = big_df_norms.melt(id_vars="model_name")
 
     # # per bodypart
@@ -202,166 +194,88 @@ if len(uploaded_files) > 0:  # otherwise don't try to proceed
     uploaded_cfg: str = st.sidebar.file_uploader(
         "Select data config yaml (optional, for pca losses)", accept_multiple_files=False
     )
-    # TODO: check that mirrored_column_matches exists, otherwise don't compute
     if uploaded_cfg is not None:
-
-        st.header("PCA multiview loss diagnostics")
 
         cfg = DictConfig(yaml.safe_load(uploaded_cfg))
 
-        cfg_pcamv = cfg.copy()
-        cfg_pcamv.model.losses_to_use = ["pca_multiview"]
+        if cfg.data.get("mirrored_column_matches", None):
 
-        # compute pca loss
-        pca_loss = build_pcamv_loss_object(cfg_pcamv)
-        big_df_pcamv = compute_metric_per_dataset(
-            dfs=dframes, metric="pca_mv", bodypart_names=bodypart_names, cfg=cfg_pcamv,
-            pca_loss=pca_loss)
+            st.header("PCA multiview loss diagnostics")
 
-        # show violin per bodypart
-        bodypart_pcamv = st.selectbox(
-            "Pick a single bodypart:",
-            pd.Series([*bodypart_names, "mean"]),
-            key="bodypart_pcamv",
-        )
+            cfg_pcamv = cfg.copy()
+            cfg_pcamv.model.losses_to_use = ["pca_multiview"]
 
-        fig_box = px.box(big_df_pcamv, x="model_name", y=bodypart_pcamv)
-        fig_box.update_layout(
-            yaxis_title="Multiview PCA Reprojection Error (pix)", xaxis_title="Model Name",
-            title=bodypart_pcamv,
-        )
-        st.plotly_chart(fig_box)
+            # compute pca loss
+            pcamv_loss = build_pca_loss_object(cfg_pcamv)
+            big_df_pcamv = compute_metric_per_dataset(
+                dfs=dframes, metric="pca_mv", bodypart_names=bodypart_names, cfg=cfg_pcamv,
+                pca_loss=pcamv_loss)
 
-        fig_hist = px.histogram(
-            big_df_pcamv,
-            x=bodypart_pcamv,
-            color="model_name",
-            marginal="rug",
-            barmode="overlay",
-        )
-        fig_hist.update_layout(
-            yaxis_title="Frame count", xaxis_title="Multiview PCA Reprojection Error (pix)",
-            title=bodypart_pcamv,
-        )
-        st.plotly_chart(fig_hist)
+            # show boxplot per bodypart
+            bodypart_pcamv = st.selectbox(
+                "Pick a single bodypart:",
+                pd.Series([*bodypart_names, "mean"]),
+                key="bodypart_pcamv",
+            )
 
-# compute norm, compute threshold crossings
-# loop over original dataframes
+            fig_pcamv_box = px.box(big_df_pcamv, x="model_name", y=bodypart_pcamv)
+            fig_pcamv_box.update_layout(
+                yaxis_title="Multiview PCA Reprojection Error (pix)", xaxis_title="Model Name",
+                title=bodypart_pcamv,
+            )
+            st.plotly_chart(fig_pcamv_box)
 
+            # show histogram per bodypart
+            fig_pcamv_hist = px.histogram(
+                big_df_pcamv,
+                x=bodypart_pcamv,
+                color="model_name",
+                marginal="rug",
+                barmode="overlay",
+            )
+            fig_pcamv_hist.update_layout(
+                yaxis_title="Frame count", xaxis_title="Multiview PCA Reprojection Error (pix)",
+                title=bodypart_pcamv,
+            )
+            st.plotly_chart(fig_pcamv_hist)
 
-# for i, vid in enumerate(video_names):
-#     absolute_path_to_preds_file = os.path.join(video_dir, vid)
-#     df_with_preds = pd.read_csv(absolute_path_to_preds_file, header=[1, 2])
+        if cfg.data.get("columns_for_singleview_pca", None):
 
-#     splitted_vid_name = vid.split('_')[-1].split('.')
-#     weight = '.'.join([splitted_vid_name[0], splitted_vid_name[1]]) # in front of temporal loss
+            st.header("PCA singleview loss diagnostics")
 
-#     if i == 0: # create big dataframe
-#         col_names = df_with_preds.columns.levels[0][1:] # assuming all files have the same bp names
-#         cols = list(col_names) # just bodypart names
-#         cols.append("hparam") # adding a column called "hparam"
-#         big_df = pd.DataFrame(columns = cols)
+            cfg_pcasv = cfg.copy()
+            cfg_pcasv.model.losses_to_use = ["pca_singleview"]
 
-#     # compute the norm
-#     df_norms = pd.DataFrame(columns = cols)
-#     diffs = df_with_preds.diff(periods=1) # not using .abs
-#     for col in col_names: # loop over bodyparts
-#         df_norms[col] = diffs[col][["x", "y"]].apply(np.linalg.norm, axis=1) # norm of the difference for that bodypart
-#         df_norms[col] = df_norms[col].mask(cond=df_norms[col]<eps, other=0.)
-#     df_norms["hparam"] = weight # a scalar
+            # compute pca loss
+            pcasv_loss = build_pca_loss_object(cfg_pcasv)
+            big_df_pcasv = compute_metric_per_dataset(
+                dfs=dframes, metric="pca_sv", bodypart_names=bodypart_names, cfg=cfg_pcasv,
+                pca_loss=pcasv_loss)
 
-#     big_df = pd.concat([big_df, df_norms]) # concat to big df
-# assert(big_df.shape[0] == df_norms.shape[0]*len(video_names))
+            # show boxplot per bodypart
+            bodypart_pcasv = st.selectbox(
+                "Pick a single bodypart:",
+                pd.Series([*bodypart_names, "mean"]),
+                key="bodypart_pcasv",
+            )
 
+            fig_pcasv_box = px.box(big_df_pcasv, x="model_name", y=bodypart_pcasv)
+            fig_pcasv_box.update_layout(
+                yaxis_title="Singleview PCA Reprojection Error (pix)", xaxis_title="Model Name",
+                title=bodypart_pcasv,
+            )
+            st.plotly_chart(fig_pcasv_box)
 
-# # want: concat them all into a single
-# @st.cache
-# def concat_dataframes(
-#     data_dict: Dict[str, pd.DataFrame],
-#     files: List[str],
-#     names: Optional[List[str]] = None,
-# ) -> pd.DataFrame:
-
-#     if names is None:
-#         names = files  # do some splitting here
-
-#     df_concat = data_dict[files[0]]
-#     df_concat = strip_cols_append_name(df_concat, names[0])
-#     for name, df in data_dict.items():
-#         df = strip_cols_append_name(df, name)
-# #         df_concat = pd.concat([df_concat, df], axis=1)
-
-#     return df_concat
-
-
-# # add a condition here whether to show a particular dataframe
-# data[files[0]]
-
-# df_concatal = concat_dataframes(data_dict=data, files=files)
-
-# df_concatal
-
-# df_concat = pd.read_csv(csv_paths[0], nrows=nrows, header=[1, 2])
-# base_colnames = list(df_concat.columns.levels[0])[1:]  # before stripping
-# df_concat = strip_cols_append_name(df_concat, model_names[0])
-# for model_name, path in zip(model_names[1:], csv_paths[1:]):
-#     df = pd.read_csv(path, nrows=nrows, header=[1, 2])
-#     df = strip_cols_append_name(df, model_name)
-#     df_concat = pd.concat([df_concat, df], axis=1)
-# return df_concat, base_colnames
-# pass
-
-
-# @st.cache
-# def load_data(
-#     nrows: int, csv_paths: List[str], model_names: List[str]
-# ) -> Tuple[pd.DataFrame, List[str]]:
-#     for f in csv_paths:
-#         assert f.endswith(".csv")
-#     # loop that strips columns and concats models by column
-#     # read single csv
-#     df_concat = pd.read_csv(csv_paths[0], nrows=nrows, header=[1, 2])
-#     base_colnames = list(df_concat.columns.levels[0])[1:]  # before stripping
-#     df_concat = strip_cols_append_name(df_concat, model_names[0])
-#     for model_name, path in zip(model_names[1:], csv_paths[1:]):
-#         df = pd.read_csv(path, nrows=nrows, header=[1, 2])
-#         df = strip_cols_append_name(df, model_name)
-#         df_concat = pd.concat([df_concat, df], axis=1)
-#     return df_concat, base_colnames
-
-
-# TODO: add epsilon interface
-
-# eps = 5.0
-# raw_df_list = []
-# norm_df_list = []
-# for i, vid in enumerate(video_names):
-#     absolute_path_to_preds_file = os.path.join(video_dir, vid)
-#     df_with_preds = pd.read_csv(absolute_path_to_preds_file, header=[1, 2])
-
-#     splitted_vid_name = vid.split('_')[-1].split('.')
-#     weight = '.'.join([splitted_vid_name[0], splitted_vid_name[1]]) # in front of temporal loss
-
-#     if i == 0: # create big dataframe
-#         col_names = df_with_preds.columns.levels[0][1:] # assuming all files have the same bp names
-#         cols = list(col_names) # just bodypart names
-#         cols.append("hparam") # adding a column called "hparam"
-#         big_df = pd.DataFrame(columns = cols)
-
-#     # compute the norm
-#     df_norms = pd.DataFrame(columns = cols)
-#     diffs = df_with_preds.diff(periods=1) # not using .abs
-#     for col in col_names: # loop over bodyparts
-#         df_norms[col] = diffs[col][["x", "y"]].apply(np.linalg.norm, axis=1) # norm of the difference for that bodypart
-#         df_norms[col] = df_norms[col].mask(cond=df_norms[col]<eps, other=0.)
-#     df_norms["hparam"] = weight # a scalar
-
-#     big_df = pd.concat([big_df, df_norms]) # concat to big df
-# assert(big_df.shape[0] == df_norms.shape[0]*len(video_names))
-
-
-# csv_paths = [os.path.join(CSV_DIR, f) for f in os.listdir(CSV_DIR)]
-
-# df_concat, bodypart_names = load_data(
-#     nrows=NROWS, csv_paths=csv_paths, model_names=NAMES
-# )
+            # show histogram per bodypart
+            fig_pcasv_hist = px.histogram(
+                big_df_pcasv,
+                x=bodypart_pcasv,
+                color="model_name",
+                marginal="rug",
+                barmode="overlay",
+            )
+            fig_pcasv_hist.update_layout(
+                yaxis_title="Frame count", xaxis_title="Singleview PCA Reprojection Error (pix)",
+                title=bodypart_pcasv,
+            )
+            st.plotly_chart(fig_pcasv_hist)

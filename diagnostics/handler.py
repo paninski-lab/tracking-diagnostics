@@ -207,21 +207,6 @@ class ModelHandler(object):
                 results_raw = pca_reprojection_error_per_keypoint(
                     kwargs["pca_loss_obj"],
                     keypoints_pred=keypoints_pred.reshape(keypoints_pred.shape[0], -1))
-
-                # original_dims = keypoints_pred.shape  # batch, num_total_keypoints, 2
-                # print(original_dims)
-                # mirrored_column_matches = kwargs["pca_obj"].mirrored_column_matches
-                # keypoints_pred = torch.tensor(
-                #     keypoints_pred,
-                #     dtype=kwargs["pca_obj"].parameters["mean"].dtype,
-                # )  # shape = (batch_size, num_keypoints, 2)
-                # print("shape after making into a tensor:", keypoints_pred.shape)
-                # keypoints_pred = format_multiview_data_for_pca(
-                #     data_arr=keypoints_pred,
-                #     mirrored_column_matches=mirrored_column_matches,
-                # )  # shape = 2 * num_views X batch_size * num_used_keypoints
-                # print("shape_after_formatting:", keypoints_pred.shape)
-
                 results_raw = results_raw.reshape(
                     -1,
                     len(mirrored_column_matches[0]),
@@ -236,15 +221,7 @@ class ModelHandler(object):
                     ]  # just the columns belonging to view c
 
             elif metric == "pca_singleview":
-                # Dan commented this thing out in favor of the loss used for training.
-                # results = pca_reprojection_error(
-                #     keypoints_pred.reshape(
-                #         keypoints_pred.shape[0], -1
-                #     ),  # just keypoint preds
-                #     mean=kwargs["pca_obj"].parameters["mean"],
-                #     kept_eigenvectors=kwargs["pca_obj"].parameters["kept_eigenvectors"],
-                #     device=kwargs["pca_obj"].device,
-                # )
+
                 pca_cols = kwargs["pca_loss_obj"].pca.columns_for_singleview_pca
                 results_ = pca_reprojection_error_per_keypoint(
                     kwargs["pca_loss_obj"],

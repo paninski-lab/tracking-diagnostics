@@ -6,8 +6,14 @@ import streamlit as st
 from typing import List, Dict, Tuple, Optional
 
 from lightning_pose.losses.losses import PCALoss
+from lightning_pose.utils.io import return_absolute_data_paths
+from lightning_pose.utils.scripts import (
+    get_imgaug_transform, get_dataset, get_data_module, get_loss_factories,
+)
 
+from diagnostics.handler import ModelHandler
 from diagnostics.metrics import rmse
+from diagnostics.metrics import pca_reprojection_error_per_keypoint
 
 
 @st.cache
@@ -55,8 +61,8 @@ def compute_metric_per_dataset(
             df_ = compute_pixel_error(df, bodypart_names, model_name, **kwargs)
         elif metric == "temporal_norm":
             df_ = compute_temporal_norms(df, bodypart_names, model_name, **kwargs)
-        elif metric == "pca_mv":
-            df_ = compute_pcamv_reprojection_error(df, bodypart_names, model_name, **kwargs)
+        elif metric == "pca_mv" or metric == "pca_sv":
+            df_ = compute_pca_reprojection_error(df, bodypart_names, model_name, **kwargs)
         else:
             raise NotImplementedError("%s is not a supported metric" % metric)
         # concat_df = pd.concat([concat_df, df_.reset_index(inplace=True, drop=False)], axis=0)
@@ -71,10 +77,12 @@ def compute_pixel_error(
     df: pd.DataFrame, bodypart_names: List[str], model_name: str, labels: pd.DataFrame,
 ) -> pd.DataFrame:
 
-    keypoints_true = labels.to_numpy().reshape(labels.shape[0], -1, 2) # shape (samples, n_keypoints, 2)
+    # shape (samples, n_keypoints, 2)
+    keypoints_true = labels.to_numpy().reshape(labels.shape[0], -1, 2)
 
+    # shape (samples, n_keypoints, 2)
     tmp = df.iloc[:, :-1].to_numpy().reshape(df.shape[0], -1, 3)  # remove "set" column
-    keypoints_pred = tmp[:, :, :2]  # shape (samples, n_keypoints, 2)
+    keypoints_pred = tmp[:, :, :2]
 
     set = df.iloc[:, -1].to_numpy()
 
@@ -109,31 +117,43 @@ def compute_temporal_norms(
 
 
 @st.cache(hash_funcs={PCALoss: lambda _: None})  # streamlit doesn't know how to hash PCALoss
-def compute_pcamv_reprojection_error(
+def compute_pca_reprojection_error(
     df: pd.DataFrame, bodypart_names: List[str], model_name: str, cfg: dict, pca_loss: PCALoss,
 ) -> pd.DataFrame:
 
     # TODO: copied from diagnostics.handler.Handler::compute_metric; figure out a way to share
     tmp = df.to_numpy().reshape(df.shape[0], -1, 3)
     keypoints_pred = tmp[:, :, :2]  # shape (samples, n_keypoints, 2)
-
     keypoints_pred = ModelHandler.resize_keypoints(cfg, keypoints_pred=keypoints_pred)
-
     original_dims = keypoints_pred.shape
-    mirrored_column_matches = pca_loss.pca.mirrored_column_matches
-    # adding a reshaping below since the loss class expects a single last dim with num_keypoints*2
-    results_raw = pca_reprojection_error_per_keypoint(
-        pca_loss, keypoints_pred=keypoints_pred.reshape(keypoints_pred.shape[0], -1))
-    results_raw = results_raw.reshape(
-        -1,
-        len(mirrored_column_matches[0]),
-        len(mirrored_column_matches),
-    )  # batch X num_used_keypoints X num_views
 
-    # next, put this back into a full keypoints pred arr
-    results = np.nan * np.zeros((original_dims[0], original_dims[1]))
-    for c, cols in enumerate(mirrored_column_matches):
-        results[:, cols] = results_raw[:, :, c]  # just the columns belonging to view c
+    if pca_loss.loss_name == "pca_multiview":
+
+        mirrored_column_matches = pca_loss.pca.mirrored_column_matches
+        # adding a reshaping below since the loss class expects a single last dim with
+        # num_keypoints*2
+        results_raw = pca_reprojection_error_per_keypoint(
+            pca_loss, keypoints_pred=keypoints_pred.reshape(keypoints_pred.shape[0], -1))
+        results_raw = results_raw.reshape(
+            -1,
+            len(mirrored_column_matches[0]),
+            len(mirrored_column_matches),
+        )  # batch X num_used_keypoints X num_views
+
+        # next, put this back into a full keypoints pred arr
+        results = np.nan * np.zeros((original_dims[0], original_dims[1]))
+        for c, cols in enumerate(mirrored_column_matches):
+            results[:, cols] = results_raw[:, :, c]  # just the columns belonging to view c
+
+    elif pca_loss.loss_name == "pca_singleview":
+
+        pca_cols = pca_loss.pca.columns_for_singleview_pca
+        results_ = pca_reprojection_error_per_keypoint(
+            pca_loss, keypoints_pred=keypoints_pred.reshape(keypoints_pred.shape[0], -1))
+
+        # next, put this back into a full keypoints pred arr
+        results = np.nan * np.zeros((original_dims[0], original_dims[1]))
+        results[:, pca_cols] = results_
 
     # collect results
     df_rpe = pd.DataFrame(columns=bodypart_names)
@@ -145,12 +165,12 @@ def compute_pcamv_reprojection_error(
 
 
 @st.cache(hash_funcs={PCALoss: lambda _: None})  # streamlit doesn't know how to hash PCALoss
-def build_pcamv_loss_object(cfg):
+def build_pca_loss_object(cfg):
     data_dir, video_dir = return_absolute_data_paths(data_cfg=cfg.data)
     imgaug_transform = get_imgaug_transform(cfg=cfg)
     dataset = get_dataset(cfg=cfg, data_dir=data_dir, imgaug_transform=imgaug_transform)
     data_module = get_data_module(cfg=cfg, dataset=dataset, video_dir=video_dir)
     data_module.setup()
     loss_factories = get_loss_factories(cfg=cfg, data_module=data_module)
-    pca_loss = loss_factories["unsupervised"].loss_instance_dict["pca_multiview"]
+    pca_loss = loss_factories["unsupervised"].loss_instance_dict[cfg.model.losses_to_use[0]]
     return pca_loss
