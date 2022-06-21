@@ -1,7 +1,9 @@
 """Utility functions for streamlit apps."""
 
+import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
+import seaborn as sns
 import streamlit as st
 from typing import List, Dict, Tuple, Optional
 
@@ -122,7 +124,13 @@ def compute_pca_reprojection_error(
 ) -> pd.DataFrame:
 
     # TODO: copied from diagnostics.handler.Handler::compute_metric; figure out a way to share
-    tmp = df.to_numpy().reshape(df.shape[0], -1, 3)
+    if df.shape[1] % 3 == 1:
+        # get rid of "set" column if present
+        tmp = df.iloc[:, :-1].to_numpy().reshape(df.shape[0], -1, 3)
+        set = df.iloc[:, -1]
+    else:
+        tmp = df.to_numpy().reshape(df.shape[0], -1, 3)
+        set = None
     keypoints_pred = tmp[:, :, :2]  # shape (samples, n_keypoints, 2)
     keypoints_pred = ModelHandler.resize_keypoints(cfg, keypoints_pred=keypoints_pred)
     original_dims = keypoints_pred.shape
@@ -161,6 +169,10 @@ def compute_pca_reprojection_error(
         df_rpe[col] = results[:, c]
     df_rpe["model_name"] = model_name
     df_rpe["mean"] = df_rpe[keypoint_names[:-1]].mean(axis=1)
+    if set is not None:
+        df_rpe["set"] = set
+        df_rpe["img_file"] = df.index
+
     return df_rpe
 
 
@@ -174,3 +186,48 @@ def build_pca_loss_object(cfg):
     loss_factories = get_loss_factories(cfg=cfg, data_module=data_module)
     pca_loss = loss_factories["unsupervised"].loss_instance_dict[cfg.model.losses_to_use[0]]
     return pca_loss
+
+
+def make_seaborn_catplot(
+        x, y, data, x_label, y_label, title, log_y=False, plot_type="box", figsize=(5, 5)):
+    sns.set_context("paper")
+    fig = plt.figure(figsize=figsize)
+    if plot_type == "box":
+        sns.boxplot(x=x, y=y, data=data)
+    elif plot_type == "boxen":
+        sns.boxenplot(x=x, y=y, data=data)
+    elif plot_type == "bar":
+        sns.barplot(x=x, y=y, data=data)
+    elif plot_type == "violin":
+        sns.violinplot(x=x, y=y, data=data)
+    elif plot_type == "strip":
+        sns.stripplot(x=x, y=y, data=data)
+    else:
+        raise NotImplementedError
+    ax = fig.gca()
+    ax.set_yscale("log") if log_y else ax.set_yscale("linear")
+    ax.set_xlabel(x_label)
+    ax.set_ylabel(y_label)
+    fig.subplots_adjust(top=0.95)
+    fig.suptitle(title)
+    return fig
+
+
+# Plotly catplot
+# if plot_type == "box" or plot_type == "boxen":
+#     fig_box = px.box(big_df_filtered, x="model_name", y=keypoint_to_plot, log_y=log_y)
+# elif plot_type == "violin":
+#     fig_box = px.violin(big_df_filtered, x="model_name", y=keypoint_to_plot, log_y=log_y)
+# elif plot_type == "strip":
+#     fig_box = px.strip(big_df_filtered, x="model_name", y=keypoint_to_plot, log_y=log_y)
+# # elif plot_type == "bar":
+# #     fig_box = px.bar(big_df_filtered, x="model_name", y=keypoint_error, log_y=log_y)
+# else:
+#     raise NotImplementedError
+# fig_width = 500
+# fig_height = 500
+# fig_box.update_layout(
+#     yaxis_title="Pixel Error", xaxis_title="Model Name", title=title,
+#     width=fig_width, height=fig_height)
+#
+# st.plotly_chart(fig_box)

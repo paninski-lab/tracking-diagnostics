@@ -15,7 +15,6 @@ to run from command line:
 # from email.mime import base
 # from urllib.parse import _NetlocResultMixinBase
 # from grpc import dynamic_ssl_server_credentials
-import matplotlib.pyplot as plt
 import numpy as np
 from omegaconf import DictConfig
 import os
@@ -23,7 +22,6 @@ import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
-import seaborn as sns
 import streamlit as st
 from typing import List, Dict, Tuple, Optional
 import yaml
@@ -32,31 +30,7 @@ from diagnostics.streamlit import get_col_names
 from diagnostics.streamlit import concat_dfs
 from diagnostics.streamlit import compute_metric_per_dataset
 from diagnostics.streamlit import build_pca_loss_object
-
-
-def make_seaborn_catplot(
-        x, y, data, x_label, y_label, title, log_y=False, plot_type="box", figsize=(5, 5)):
-    sns.set_context("paper")
-    fig = plt.figure(figsize=figsize)
-    if plot_type == "box":
-        sns.boxplot(x=x, y=y, data=data)
-    elif plot_type == "boxen":
-        sns.boxenplot(x=x, y=y, data=data)
-    elif plot_type == "bar":
-        sns.barplot(x=x, y=y, data=data)
-    elif plot_type == "violin":
-        sns.violinplot(x=x, y=y, data=data)
-    elif plot_type == "strip":
-        sns.stripplot(x=x, y=y, data=data)
-    else:
-        raise NotImplementedError
-    ax = fig.gca()
-    ax.set_yscale("log") if log_y else ax.set_yscale("linear")
-    ax.set_xlabel(x_label)
-    ax.set_ylabel(y_label)
-    fig.subplots_adjust(top=0.95)
-    fig.suptitle(title)
-    return fig
+from diagnostics.streamlit import make_seaborn_catplot
 
 
 def make_plotly_catplot(x, y, data, x_label, y_label, title, plot_type="box"):
@@ -128,9 +102,9 @@ if len(uploaded_files) > 0:  # otherwise don't try to proceed
     #     st.write(df_concat.head())
 
     models = st.multiselect(
-        "Pick models:", pd.Series(list(dframes.keys())), default=list(dframes.keys())
+        "Select models:", pd.Series(list(dframes.keys())), default=list(dframes.keys())
     )
-    keypoint = st.selectbox("Pick a single keypoint:", pd.Series(keypoint_names))
+    keypoint = st.selectbox("Select a keypoint:", pd.Series(keypoint_names))
     coordinate = st.radio("Coordinate:", pd.Series(["x", "y"]))
     cols = get_col_names(keypoint, coordinate, models)
 
@@ -193,7 +167,7 @@ if len(uploaded_files) > 0:  # otherwise don't try to proceed
 
     # plot diagnostic averaged overall all keypoints
     plot_type_tn = st.selectbox(
-        "Pick a plot type:", ["box", "boxen", "bar", "violin", "strip"], key="plot_type_tn")
+        "Select a plot type:", ["box", "boxen", "bar", "violin", "strip"], key="plot_type_tn")
     plot_scale_tn = st.radio("Select y-axis scale", ["linear", "log"], key="plot_scale_tn")
     log_y_tn = False if plot_scale_tn == "linear" else True
     fig_cat_tn = make_seaborn_catplot(
@@ -203,7 +177,7 @@ if len(uploaded_files) > 0:  # otherwise don't try to proceed
 
     # select keypoint to plot
     keypoint_temp_norm = st.selectbox(
-        "Pick a single keypoint:", pd.Series([*keypoint_names, "mean"]), key="keypoint_temp_norm",
+        "Select a keypoint:", pd.Series([*keypoint_names, "mean"]), key="keypoint_temp_norm",
     )
 
     # show boxplot per keypoint
@@ -254,7 +228,7 @@ if len(uploaded_files) > 0:  # otherwise don't try to proceed
 
             # plot diagnostic averaged overall all keypoints
             plot_type_pcamv = st.selectbox(
-                "Pick a plot type:", ["box", "boxen", "bar", "violin", "strip"],
+                "Select a plot type:", ["box", "boxen", "bar", "violin", "strip"],
                 key="plot_type_pcamv")
             plot_scale_pcamv = st.radio(
                 "Select y-axis scale", ["linear", "log"], key="plot_scale_pcamv")
@@ -267,9 +241,7 @@ if len(uploaded_files) > 0:  # otherwise don't try to proceed
 
             # select keypoint to plot
             keypoint_pcamv = st.selectbox(
-                "Pick a single keypoint:",
-                pd.Series([*keypoint_names, "mean"]),
-                key="keypoint_pcamv",
+                "Select a keypoint:", pd.Series([*keypoint_names, "mean"]), key="keypoint_pcamv",
             )
 
             # show boxplot per keypoint
@@ -304,7 +276,7 @@ if len(uploaded_files) > 0:  # otherwise don't try to proceed
 
             # plot diagnostic averaged overall all keypoints
             plot_type_pcasv = st.selectbox(
-                "Pick a plot type:", ["box", "boxen", "bar", "violin", "strip"],
+                "Select a plot type:", ["box", "boxen", "bar", "violin", "strip"],
                 key="plot_type_pcasv")
             plot_scale_pcasv = st.radio(
                 "Select y-axis scale", ["linear", "log"], key="plot_scale_pcasv")
@@ -317,9 +289,7 @@ if len(uploaded_files) > 0:  # otherwise don't try to proceed
 
             # select keypoint to plot
             keypoint_pcasv = st.selectbox(
-                "Pick a single keypoint:",
-                pd.Series([*keypoint_names, "mean"]),
-                key="keypoint_pcasv",
+                "Select a keypoint:", pd.Series([*keypoint_names, "mean"]), key="keypoint_pcasv",
             )
 
             # show boxplot per keypoint
