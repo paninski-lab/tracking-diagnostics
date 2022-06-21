@@ -73,7 +73,7 @@ def get_model_params(cfg):
     return cfg_less
 
 
-def find_model_versions(base_dir, cfg, verbose=False, keys_to_sweep=[]):
+def find_model_versions(base_dir, cfg, verbose=False, keys_to_sweep=[], needs_pred_csv=True):
     """Search model versions to find if one with the same hyperparameters has been fit.
 
     Parameters
@@ -87,6 +87,8 @@ def find_model_versions(base_dir, cfg, verbose=False, keys_to_sweep=[]):
         True to print desired cfg params
     keys_to_sweep : list of strs
         these can be any value
+    needs_pred_csv : bool
+        True to require predictions.csv file in model directory
 
     Returns
     -------
@@ -127,12 +129,20 @@ def find_model_versions(base_dir, cfg, verbose=False, keys_to_sweep=[]):
                 cfg_curr["losses_to_use"] = []
             if all([cfg_curr[key] == cfg_req[key] for key in cfg_req.keys()]):
                 # found match - did it finish fitting?
-                if os.path.exists(os.path.join(version_dir, "predictions.csv")):
+                if needs_pred_csv:
+                    if os.path.exists(os.path.join(version_dir, "predictions.csv")):
+                        version_list.append(version_dir)
+                        if len(keys_to_sweep) == 0:
+                            # we found the only model we're looking for
+                            break
+                        print(f"Found model at: {version_dir}")
+                else:
                     version_list.append(version_dir)
                     if len(keys_to_sweep) == 0:
                         # we found the only model we're looking for
                         break
                     print(f"Found model at: {version_dir}")
+
             else:
                 if verbose:
                     print(version_dir)

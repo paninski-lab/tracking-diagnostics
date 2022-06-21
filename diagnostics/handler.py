@@ -25,9 +25,12 @@ from lightning_pose.utils.pca import (
 class ModelHandler(object):
     """Helper class for computing various metrics on pose estimates."""
 
-    def __init__(self, base_dir, cfg, verbose=False, keys_to_sweep=[]):
+    def __init__(self, base_dir, cfg, verbose=False, keys_to_sweep=[], need_pred_csv=True):
 
-        version = find_model_versions(base_dir, cfg, verbose=verbose, keys_to_sweep=keys_to_sweep)
+        version = find_model_versions(
+            base_dir, cfg, verbose=verbose, keys_to_sweep=keys_to_sweep,
+            needs_pred_csv=need_pred_csv,
+        )
         if len(version) == 0:
             raise FileNotFoundError("Did not find requested model in %s" % base_dir)
         self.model_dir = version[0]
