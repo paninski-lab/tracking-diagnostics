@@ -172,7 +172,7 @@ if label_file is not None and len(prediction_files) > 0:  # otherwise don't try 
 
     # choose from individual keypoints, their mean, or all at once
     keypoint_to_plot = st.selectbox(
-        "Select a keypoint:", [*keypoint_names, "mean", "ALL"], key="keypoint")
+        "Select a keypoint:", ["mean", "ALL", *keypoint_names], key="keypoint")
 
     # choose which metric to plot
     metric_to_plot = st.selectbox("Select a metric:", metric_options, key="metric")
@@ -193,7 +193,7 @@ if label_file is not None and len(prediction_files) > 0:  # otherwise don't try 
     st.header("Compare multiple models")
 
     # enumerate plotting options
-    plot_type = st.selectbox("Pick a plot type:", ["box", "boxen", "bar", "violin", "strip"])
+    plot_type = st.selectbox("Pick a plot type:", ["boxen", "box", "bar", "violin", "strip"])
     plot_scale = st.radio("Select y-axis scale", ["linear", "log"])
 
     # filter data

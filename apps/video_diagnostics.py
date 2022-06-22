@@ -167,7 +167,7 @@ if len(uploaded_files) > 0:  # otherwise don't try to proceed
 
     # plot diagnostic averaged overall all keypoints
     plot_type_tn = st.selectbox(
-        "Select a plot type:", ["box", "boxen", "bar", "violin", "strip"], key="plot_type_tn")
+        "Select a plot type:", ["boxen", "box", "bar", "violin", "strip"], key="plot_type_tn")
     plot_scale_tn = st.radio("Select y-axis scale", ["linear", "log"], key="plot_scale_tn")
     log_y_tn = False if plot_scale_tn == "linear" else True
     fig_cat_tn = make_seaborn_catplot(
@@ -228,7 +228,7 @@ if len(uploaded_files) > 0:  # otherwise don't try to proceed
 
             # plot diagnostic averaged overall all keypoints
             plot_type_pcamv = st.selectbox(
-                "Select a plot type:", ["box", "boxen", "bar", "violin", "strip"],
+                "Select a plot type:", ["boxen", "box", "bar", "violin", "strip"],
                 key="plot_type_pcamv")
             plot_scale_pcamv = st.radio(
                 "Select y-axis scale", ["linear", "log"], key="plot_scale_pcamv")
@@ -276,7 +276,7 @@ if len(uploaded_files) > 0:  # otherwise don't try to proceed
 
             # plot diagnostic averaged overall all keypoints
             plot_type_pcasv = st.selectbox(
-                "Select a plot type:", ["box", "boxen", "bar", "violin", "strip"],
+                "Select a plot type:", ["boxen", "box", "bar", "violin", "strip"],
                 key="plot_type_pcasv")
             plot_scale_pcasv = st.radio(
                 "Select y-axis scale", ["linear", "log"], key="plot_scale_pcasv")

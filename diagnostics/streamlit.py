@@ -127,7 +127,7 @@ def compute_pca_reprojection_error(
     if df.shape[1] % 3 == 1:
         # get rid of "set" column if present
         tmp = df.iloc[:, :-1].to_numpy().reshape(df.shape[0], -1, 3)
-        set = df.iloc[:, -1]
+        set = df.iloc[:, -1].to_numpy()
     else:
         tmp = df.to_numpy().reshape(df.shape[0], -1, 3)
         set = None

@@ -41,6 +41,7 @@ def get_model_params(cfg):
         "resnet_version": cfg["model"]["resnet_version"],
         "model_type": cfg["model"]["model_type"],
         "model_name": cfg["model"]["model_name"],
+        "do_context": cfg["model"]["do_context"],
     }
     if cfg_less["model_type"] == "heatmap":
         cfg_less["heatmap_loss_type"] = cfg["model"]["heatmap_loss_type"]
