@@ -49,10 +49,6 @@ def get_model_params(cfg):
     semi_supervised = check_if_semi_supervised(cfg.model.losses_to_use)
     if semi_supervised:
         cfg_less["losses_to_use"] = cfg["model"]["losses_to_use"]
-        cfg_less["rng_seed_data_dali"] = cfg["training"]["rng_seed_data_dali"]
-        cfg_less["unlabeled_sequence_length"] = cfg["training"][
-            "unlabeled_sequence_length"
-        ]
         cfg_less["limit_train_batches"] = cfg["training"]["limit_train_batches"]
         if "pca_multiview" in cfg_less["losses_to_use"]:
             cfg_less["pca_multiview"] = cfg["losses"]["pca_multiview"]
