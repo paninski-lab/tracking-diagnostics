@@ -53,6 +53,8 @@ st.sidebar.header("Data Settings")
 uploaded_files: list = st.sidebar.file_uploader(
     "Choose one or more CSV files", accept_multiple_files=True
 )
+# uploaded_cfg = None
+# big_df_temp_norm = None
 
 if len(uploaded_files) > 0:  # otherwise don't try to proceed
 
@@ -91,66 +93,6 @@ if len(uploaded_files) > 0:  # otherwise don't try to proceed
     df_concat, keypoint_names = concat_dfs(dframes)
 
     # ---------------------------------------------------
-    # plot traces
-    # ---------------------------------------------------
-
-    st.header("Trace diagnostics")
-
-    # display_head = st.checkbox("Display trace DataFrame")
-    # if display_head:
-    #     st.write("Concatenated Dataframe:")
-    #     st.write(df_concat.head())
-
-    models = st.multiselect(
-        "Select models:", pd.Series(list(dframes.keys())), default=list(dframes.keys())
-    )
-    keypoint = st.selectbox("Select a keypoint:", pd.Series(keypoint_names))
-    coordinate = st.radio("Coordinate:", pd.Series(["x", "y"]))
-    cols = get_col_names(keypoint, coordinate, models)
-
-    colors = px.colors.qualitative.Plotly
-
-    fig_traces = make_subplots(
-        rows=2, cols=1,
-        shared_xaxes=True,
-        x_title="Frame number",
-        row_heights=[2, 1],
-        vertical_spacing=0.05,
-    )
-
-    for c, col in enumerate(cols):
-        fig_traces.add_trace(
-            go.Scatter(
-                name=col,
-                x=np.arange(df_concat.shape[0]),
-                y=df_concat[col],
-                mode='lines',
-                line=dict(color=colors[c]),
-            ),
-            row=1, col=1
-        )
-
-    for c, col in enumerate(cols):
-        col_l = col.replace("_%s_" % coordinate, "_likelihood_")
-        fig_traces.add_trace(
-            go.Scatter(
-                name=col_l,
-                x=np.arange(df_concat.shape[0]),
-                y=df_concat[col_l],
-                mode='lines',
-                line=dict(color=colors[c]),
-                showlegend=False,
-            ),
-            row=2, col=1
-        )
-
-    fig_traces['layout']['yaxis']['title'] = "%s coordinate" % coordinate
-    fig_traces['layout']['yaxis2']['title'] = "confidence"
-    fig_traces.update_layout(
-        width=800, height=600, title_text="Timeseries of %s (%s)" % (keypoint, coordinate))
-    st.plotly_chart(fig_traces)
-
-    # ---------------------------------------------------
     # plot temporal norms
     # ---------------------------------------------------
 
@@ -160,10 +102,10 @@ if len(uploaded_files) > 0:  # otherwise don't try to proceed
 
     big_df_temp_norm = compute_metric_per_dataset(
         dfs=dframes, metric="temporal_norm", keypoint_names=keypoint_names)
-    # disp_temp_norms_head = st.checkbox("Display norms DataFrame")
-    # if disp_temp_norms_head:
-    #     st.write("Temporal norms dataframe:")
-    #     st.write(big_df_temp_norm.head())
+    disp_temp_norms_head = st.checkbox("Display norms DataFrame")
+    if disp_temp_norms_head:
+        st.write("Temporal norms dataframe:")
+        st.write(big_df_temp_norm.head())
 
     # plot diagnostic averaged overall all keypoints
     plot_type_tn = st.selectbox(
@@ -304,3 +246,156 @@ if len(uploaded_files) > 0:  # otherwise don't try to proceed
                 y_label="Frame count", title=keypoint_pcasv, plot_type="hist"
             )
             st.plotly_chart(fig_hist_pcasv)
+
+    # ---------------------------------------------------
+    # plot traces
+    # ---------------------------------------------------
+
+    st.header("Trace diagnostics")
+
+    # display_head = st.checkbox("Display trace DataFrame")
+    # if display_head:
+    #     st.write("Concatenated Dataframe:")
+    #     st.write(df_concat.head())
+
+    models = st.multiselect(
+        "Select models:", pd.Series(list(dframes.keys())), default=list(dframes.keys())
+    )
+    keypoint = st.selectbox("Select a keypoint:", pd.Series(keypoint_names))
+    coordinate = "x"  # st.radio("Coordinate:", pd.Series(["x", "y"]))
+    cols = get_col_names(keypoint, coordinate, models)
+
+    colors = px.colors.qualitative.Plotly
+
+    rows = 3
+    row_heights = [2, 2, 0.75]
+    if "big_df_temp_norm" in locals():
+        rows += 1
+        row_heights.insert(0, 0.75)
+    if "big_df_pcamv" in locals():
+        rows += 1
+        row_heights.insert(0, 0.75)
+    if "big_df_pcasv" in locals():
+        rows += 1
+        row_heights.insert(0, 0.75)
+
+    fig_traces = make_subplots(
+        rows=rows, cols=1,
+        shared_xaxes=True,
+        x_title="Frame number",
+        row_heights=row_heights,
+        vertical_spacing=0.03,
+    )
+
+    yaxis_labels = {}
+    row = 1
+
+    # plot temporal norms
+    if "big_df_temp_norm" in locals():
+        for c, col in enumerate(cols):
+            pieces = col.split("_%s_" % coordinate)
+            assert len(pieces) == 2  # otherwise "_[x/y]_" appears in keypoint or model name :(
+            kp = pieces[0]
+            model = pieces[1]
+            fig_traces.add_trace(
+                go.Scatter(
+                    name=col,
+                    x=np.arange(df_concat.shape[0]),
+                    y=big_df_temp_norm[kp][big_df_temp_norm.model_name == model],
+                    mode='lines',
+                    line=dict(color=colors[c]),
+                    showlegend=False,
+                ),
+                row=row, col=1
+            )
+        yaxis_labels['yaxis%i' % row] = "temporal<br>norm"
+        row += 1
+
+    # plot pca multiview reprojection errors
+    if "big_df_pcamv" in locals():
+        for c, col in enumerate(cols):
+            pieces = col.split("_%s_" % coordinate)
+            assert len(pieces) == 2  # otherwise "_[x/y]_" appears in keypoint or model name :(
+            kp = pieces[0]
+            model = pieces[1]
+            fig_traces.add_trace(
+                go.Scatter(
+                    name=col,
+                    x=np.arange(df_concat.shape[0]),
+                    y=big_df_pcamv[kp][big_df_pcamv.model_name == model],
+                    mode='lines',
+                    line=dict(color=colors[c]),
+                    showlegend=False,
+                ),
+                row=row, col=1
+            )
+        yaxis_labels['yaxis%i' % row] = "pca multi<br>error"
+        row += 1
+
+    # plot pca singleview reprojection errors
+    if "big_df_pcasv" in locals():
+        for c, col in enumerate(cols):
+            pieces = col.split("_%s_" % coordinate)
+            assert len(pieces) == 2  # otherwise "_[x/y]_" appears in keypoint or model name :(
+            kp = pieces[0]
+            model = pieces[1]
+            fig_traces.add_trace(
+                go.Scatter(
+                    name=col,
+                    x=np.arange(df_concat.shape[0]),
+                    y=big_df_pcasv[kp][big_df_pcasv.model_name == model],
+                    mode='lines',
+                    line=dict(color=colors[c]),
+                    showlegend=False,
+                ),
+                row=row, col=1
+            )
+        yaxis_labels['yaxis%i' % row] = "pca single<br>error"
+        row += 1
+
+    # plot traces
+    for coord in ["x", "y"]:
+        for c, col in enumerate(cols):
+            pieces = col.split("_%s_" % coordinate)
+            assert len(pieces) == 2  # otherwise "_[x/y]_" appears in keypoint or model name :(
+            kp = pieces[0]
+            model = pieces[1]
+            new_col = col.replace("_%s_" % coordinate, "_%s_" % coord)
+            fig_traces.add_trace(
+                go.Scatter(
+                    name=model,
+                    x=np.arange(df_concat.shape[0]),
+                    y=df_concat[new_col],
+                    mode='lines',
+                    line=dict(color=colors[c]),
+                    showlegend=False if coord == "x" else True,
+                ),
+                row=row, col=1
+            )
+        yaxis_labels['yaxis%i' % row] = "%s coordinate" % coord
+        row += 1
+
+    # plot likelihoods
+    for c, col in enumerate(cols):
+        col_l = col.replace("_%s_" % coordinate, "_likelihood_")
+        fig_traces.add_trace(
+            go.Scatter(
+                name=col_l,
+                x=np.arange(df_concat.shape[0]),
+                y=df_concat[col_l],
+                mode='lines',
+                line=dict(color=colors[c]),
+                showlegend=False,
+            ),
+            row=row, col=1
+        )
+    yaxis_labels['yaxis%i' % row] = "confidence"
+    row += 1
+
+    for k, v in yaxis_labels.items():
+        fig_traces["layout"][k]["title"] = v
+    fig_traces.update_layout(
+        width=800, height=np.sum(row_heights) * 125,
+        title_text="Timeseries of %s" % keypoint
+    )
+    st.plotly_chart(fig_traces)
