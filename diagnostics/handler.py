@@ -142,12 +142,6 @@ class ModelHandler(object):
                 saved_preds_dir = os.path.dirname(pred_file)
                 if not os.path.exists(saved_preds_dir):
                     os.makedirs(saved_preds_dir)
-                if "heatmap_file" in kwargs.keys():
-                    saved_heat_dir = os.path.dirname(kwargs["heatmap_file"])
-                    if not os.path.exists(saved_heat_dir):
-                        os.makedirs(saved_heat_dir)
-                else:
-                    kwargs["heatmap_file"] = None
                 ckpt_file = ckpt_path_from_base_path(
                     self.model_dir, model_name=self.cfg.model.model_name
                 )
@@ -156,7 +150,6 @@ class ModelHandler(object):
                     data_module=kwargs["datamodule"],
                     ckpt_file=ckpt_file,
                     preds_file=pred_file,
-                    # heatmap_file=kwargs["heatmap_file"],
                     gpu_id=self.cfg.training.gpu_id,
                 )
             else:

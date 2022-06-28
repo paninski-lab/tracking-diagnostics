@@ -38,7 +38,7 @@ def get_model_params(cfg):
         "rng_seed_data_pt": cfg["training"]["rng_seed_data_pt"],
         "rng_seed_model_pt": cfg["training"]["rng_seed_model_pt"],
         "downsample_factor": cfg["data"]["downsample_factor"],
-        "resnet_version": cfg["model"]["resnet_version"],
+        # "resnet_version": cfg["model"]["resnet_version"],
         "model_type": cfg["model"]["model_type"],
         "model_name": cfg["model"]["model_name"],
         "do_context": cfg["model"]["do_context"],
