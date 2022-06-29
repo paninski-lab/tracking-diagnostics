@@ -65,6 +65,8 @@ def compute_metric_per_dataset(
             df_ = compute_temporal_norms(df, keypoint_names, model_name, **kwargs)
         elif metric == "pca_mv" or metric == "pca_sv":
             df_ = compute_pca_reprojection_error(df, keypoint_names, model_name, **kwargs)
+        elif metric == "confidence":
+            df_ = compute_confidence(df, keypoint_names, model_name, **kwargs)
         else:
             raise NotImplementedError("%s is not a supported metric" % metric)
         # concat_df = pd.concat([concat_df, df_.reset_index(inplace=True, drop=False)], axis=0)
@@ -98,6 +100,34 @@ def compute_pixel_error(
     df_["mean"] = df_[keypoint_names[:-1]].mean(axis=1)
     df_["set"] = set
     df_["img_file"] = labels.index
+
+    return df_
+
+
+@st.cache
+def compute_confidence(
+        df: pd.DataFrame, keypoint_names: List[str], model_name: str, **kwargs
+) -> pd.DataFrame:
+
+    if df.shape[1] % 3 == 1:
+        # get rid of "set" column if present
+        tmp = df.iloc[:, :-1].to_numpy().reshape(df.shape[0], -1, 3)
+        set = df.iloc[:, -1].to_numpy()
+    else:
+        tmp = df.to_numpy().reshape(df.shape[0], -1, 3)
+        set = None
+
+    results = tmp[:, :, 2]
+
+    # collect results
+    df_ = pd.DataFrame(columns=keypoint_names)
+    for c, col in enumerate(keypoint_names):  # loop over keypoints
+        df_[col] = results[:, c]
+    df_["model_name"] = model_name
+    df_["mean"] = df_[keypoint_names[:-1]].mean(axis=1)
+    if set is not None:
+        df_["set"] = set
+        df_["img_file"] = df.index
 
     return df_
 

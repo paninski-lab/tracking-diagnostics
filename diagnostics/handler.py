@@ -262,7 +262,7 @@ class ModelHandler(object):
             assert results.shape == confidences.shape
             results[confidences < confidence_thresh] = np.nan
 
-        return results
+        return results, confidences
 
 
 def check_kwargs(kwargs, metric, is_video):

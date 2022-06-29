@@ -53,8 +53,6 @@ st.sidebar.header("Data Settings")
 uploaded_files: list = st.sidebar.file_uploader(
     "Choose one or more CSV files", accept_multiple_files=True
 )
-# uploaded_cfg = None
-# big_df_temp_norm = None
 
 if len(uploaded_files) > 0:  # otherwise don't try to proceed
 
@@ -102,10 +100,10 @@ if len(uploaded_files) > 0:  # otherwise don't try to proceed
 
     big_df_temp_norm = compute_metric_per_dataset(
         dfs=dframes, metric="temporal_norm", keypoint_names=keypoint_names)
-    disp_temp_norms_head = st.checkbox("Display norms DataFrame")
-    if disp_temp_norms_head:
-        st.write("Temporal norms dataframe:")
-        st.write(big_df_temp_norm.head())
+    # disp_temp_norms_head = st.checkbox("Display norms DataFrame")
+    # if disp_temp_norms_head:
+    #     st.write("Temporal norms dataframe:")
+    #     st.write(big_df_temp_norm.head())
 
     # plot diagnostic averaged overall all keypoints
     plot_type_tn = st.selectbox(
@@ -399,3 +397,42 @@ if len(uploaded_files) > 0:  # otherwise don't try to proceed
         title_text="Timeseries of %s" % keypoint
     )
     st.plotly_chart(fig_traces)
+
+    # ---------------------------------------------------
+    # plot confidences
+    # ---------------------------------------------------
+
+    st.header("Model confidence")
+    x_label = "Model Name"
+    y_label_conf = "Confidence"
+
+    big_df_conf = compute_metric_per_dataset(
+        dfs=dframes, metric="confidence", keypoint_names=keypoint_names)
+
+    # plot diagnostic averaged overall all keypoints
+    plot_type_conf = st.selectbox(
+        "Select a plot type:", ["boxen", "box", "bar", "violin", "strip"], key="plot_type_conf")
+    plot_scale_conf = st.radio("Select y-axis scale", ["linear", "log"], key="plot_scale_conf")
+    log_y_conf = False if plot_scale_conf == "linear" else True
+    fig_cat_conf = make_seaborn_catplot(
+        x="model_name", y="mean", data=big_df_conf, log_y=log_y_conf, x_label=x_label,
+        y_label=y_label_conf, title="Average over all keypoints", plot_type=plot_type_conf)
+    st.pyplot(fig_cat_conf)
+
+    # select keypoint to plot
+    keypoint_conf = st.selectbox(
+        "Select a keypoint:", pd.Series([*keypoint_names, "mean"]), key="keypoint_conf",
+    )
+
+    # show boxplot per keypoint
+    fig_box_conf = make_plotly_catplot(
+        x="model_name", y=keypoint_conf, data=big_df_conf, x_label=x_label,
+        y_label=y_label_conf, title=keypoint_conf, plot_type="box")
+    st.plotly_chart(fig_box_conf)
+
+    # show histogram per keypoint
+    fig_hist_conf = make_plotly_catplot(
+        x=keypoint_conf, y=None, data=big_df_conf, x_label=y_label_conf,
+        y_label="Frame count", title=keypoint_conf, plot_type="hist"
+    )
+    st.plotly_chart(fig_hist_conf)
