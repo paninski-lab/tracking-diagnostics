@@ -1,5 +1,6 @@
 h5py
 ipykernel
+kaleido
 matplotlib
 numpy
 opencv-python

@@ -129,10 +129,10 @@ class ModelHandler(object):
                 predict_single_video(
                     video_file=video_file,
                     ckpt_file=ckpt_file,
+                    do_context=self.cfg.model.do_context,
                     cfg_file=self.cfg,
                     preds_file=pred_file,
                     heatmap_file=kwargs["heatmap_file"],
-                    sequence_length=self.cfg.eval.dali_parameters.sequence_length,
                 )
             elif kwargs.get("datamodule", None) is not None:
                 from lightning_pose.utils.predictions import predict_dataset
