@@ -299,12 +299,12 @@ def update_loss_config(
         cfg.losses['pca_singleview'].log_weight = loss_weight
         cfg.losses['unimodal_mse'].log_weight = loss_weight
         cfg.losses['temporal'].log_weight = loss_weight
-    elif loss_type == 'all':
+    elif loss_type == 'all' or loss_type == 'combined':
         # find all losses
         if loss_weight_dict is not None:
             loss_list = []
             for loss in loss_weight_dict.keys():
-                if loss == 'supervised' or loss == 'all':
+                if loss == 'supervised' or loss == 'all' or loss == 'combined':
                     continue
                 else:
                     loss_list.append(loss)
