@@ -64,6 +64,12 @@ def get_model_params(cfg):
             cfg_less["unimodal_kl"] = cfg["losses"]["unimodal_kl"]
         if "unimodal_js" in cfg_less["losses_to_use"]:
             cfg_less["unimodal_js"] = cfg["losses"]["unimodal_js"]
+        if cfg_less["do_context"] == True:
+            if "consecutive_sequences" in cfg["dali"]["context"]["train"]:
+                cfg_less["consecutive_sequences"] = cfg["dali"]["context"]["train"]["consecutive_sequences"]
+            elif "random_shuffle" in cfg["dali"]["context"]["train"]:
+                cfg_less["consecutive_sequences"] = False
+
     else:
         cfg_less["losses_to_use"] = []
 
@@ -119,9 +125,16 @@ def find_model_versions(base_dir, cfg, verbose=False, keys_to_sweep=[], needs_pr
             cfg_curr = {
                 **cfg_["model"],
                 **cfg_["data"],
+                **cfg_["dali"],
                 **cfg_["losses"],
                 **cfg_["training"],
             }
+            # hacking the consecutive_sequences param to make it work
+            if "consecutive_sequences" in cfg_curr["context"]["train"]:
+                cfg_curr["consecutive_sequences"] = cfg_curr["context"]["train"]["consecutive_sequences"]
+            elif "random_shuffle" in cfg_curr["context"]["train"]:
+                if cfg_curr["context"]["train"]["random_shuffle"]:
+                    cfg_curr["consecutive_sequences"] = False
             if cfg_curr["losses_to_use"] is None:  # support null case in hydra
                 cfg_curr["losses_to_use"] = []
             if all([cfg_curr[key] == cfg_req[key] for key in cfg_req.keys()]):
