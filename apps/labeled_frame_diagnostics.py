@@ -30,6 +30,7 @@ from lightning_pose.utils.scripts import (
     get_imgaug_transform, get_dataset, get_data_module, get_loss_factories,
 )
 
+from diagnostics.streamlit import get_df_box, get_df_scatter
 from diagnostics.streamlit import build_pca_loss_object
 from diagnostics.streamlit import concat_dfs
 from diagnostics.streamlit import compute_metric_per_dataset
@@ -40,34 +41,6 @@ from diagnostics.streamlit import make_seaborn_catplot
 # - refactor df making
 # - save as pdf / eps
 # - show image on hover?
-
-
-@st.cache
-def get_df_box(df_orig, keypoint_names, model_names):
-    df_boxes = []
-    for keypoint in keypoint_names:
-        for model_curr in model_names:
-            tmp_dict = {
-                "keypoint": keypoint,
-                "metric": "Pixel error",
-                "value": df_orig[df_orig.model_name == model_curr][keypoint],
-                "model_name": model_curr,
-            }
-            df_boxes.append(pd.DataFrame(tmp_dict))
-    return pd.concat(df_boxes)
-
-
-@st.cache
-def get_df_scatter(df_0, df_1, data_type):
-    df_scatters = []
-    for keypoint in keypoint_names:
-        df_scatters.append(pd.DataFrame({
-            "img_file": df_0.img_file[df_0.set == data_type],
-            "keypoint": keypoint,
-            model_0: df_0[keypoint][df_0.set == data_type],
-            model_1: df_1[keypoint][df_1.set == data_type],
-        }))
-    return pd.concat(df_scatters)
 
 
 def run():
