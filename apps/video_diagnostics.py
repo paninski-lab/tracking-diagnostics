@@ -10,15 +10,25 @@ The app creates plots for:
 to run from command line:
 > streamlit run /path/to/video_diagnostics.py
 
+optionally, multiple prediction files can be specified from the command line; each must be
+preceded by "--prediction_files":
+> streamlit run /path/to/video_diagnostics.py --
+--prediction_files=/path/to/pred0.csv --prediction_files=/path/to/pred1.csv
+
+optionally, a data config file can be specified from the command line
+> streamlit run /path/to/video_diagnostics.py -- --data_cfg=/path/to/cfg.yaml
+
 """
 
 # from email.mime import base
 # from urllib.parse import _NetlocResultMixinBase
 # from grpc import dynamic_ssl_server_credentials
+import argparse
 import numpy as np
 from omegaconf import DictConfig
 import os
 import pandas as pd
+from pathlib import Path
 import plotly.express as px
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
@@ -31,6 +41,7 @@ from diagnostics.streamlit import concat_dfs
 from diagnostics.streamlit import compute_metric_per_dataset
 from diagnostics.streamlit import build_pca_loss_object
 from diagnostics.streamlit import make_seaborn_catplot
+from diagnostics.streamlit import update_single_file, update_file_list
 
 
 def make_plotly_catplot(x, y, data, x_label, y_label, title, plot_type="box"):
@@ -49,12 +60,16 @@ def make_plotly_catplot(x, y, data, x_label, y_label, title, plot_type="box"):
 
 def run():
 
+    args = parser.parse_args()
+
     st.title("Video Diagnostics")
 
     st.sidebar.header("Data Settings")
-    uploaded_files: list = st.sidebar.file_uploader(
-        "Choose one or more CSV files", accept_multiple_files=True
+    uploaded_files_: list = st.sidebar.file_uploader(
+        "Choose one or more CSV files", accept_multiple_files=True, type="csv",
     )
+    # check to see if a prediction files were provided externally via cli arg
+    uploaded_files, using_cli_preds = update_file_list(uploaded_files_, args.prediction_files)
 
     if len(uploaded_files) > 0:  # otherwise don't try to proceed
 
@@ -64,8 +79,11 @@ def run():
 
         # read dataframes into a dict with keys=filenames
         dframes = {}
-        for uploaded_file in uploaded_files:
-            if uploaded_file.name in dframes.keys():
+        for u, uploaded_file in enumerate(uploaded_files):
+            if using_cli_preds and len(args.model_names) > 0:
+                # use provided names from cli if applicable
+                filename = args.model_names[u]
+            elif uploaded_file.name in dframes.keys():
                 # append new integer to duplicate filenames
                 idx = 0
                 new_name = "%s_0" % uploaded_file.name
@@ -76,6 +94,8 @@ def run():
             else:
                 filename = uploaded_file.name
             dframes[filename] = pd.read_csv(uploaded_file, header=[1, 2], index_col=0)
+            if not isinstance(uploaded_file, Path):
+                uploaded_file.seek(0)  # reset buffer after reading
 
         # edit modelnames if desired, to simplify plotting
         st.sidebar.write("Model display names (editable)")
@@ -144,12 +164,19 @@ def run():
         # plot pca reprojection errors
         # ---------------------------------------------------
 
-        uploaded_cfg: str = st.sidebar.file_uploader(
-            "Select data config yaml (optional, for pca losses)", accept_multiple_files=False
+        uploaded_cfg_: str = st.sidebar.file_uploader(
+            "Select data config yaml (optional, for pca losses)", accept_multiple_files=False,
+            type="yaml",
         )
+        uploaded_cfg = update_single_file(uploaded_cfg_, args.data_cfg)
+
         if uploaded_cfg is not None:
 
-            cfg = DictConfig(yaml.safe_load(uploaded_cfg))
+            if isinstance(uploaded_cfg, Path):
+                cfg = DictConfig(yaml.safe_load(open(uploaded_cfg)))
+            else:
+                cfg = DictConfig(yaml.safe_load(uploaded_cfg))
+                uploaded_cfg.seek(0)  # reset buffer after reading
 
             # ---------------------------------------------------
             # pca multiview
@@ -441,4 +468,11 @@ def run():
 
 
 if __name__ == "__main__":
+
+    parser = argparse.ArgumentParser()
+
+    parser.add_argument('--prediction_files', action='append', default=[])
+    parser.add_argument('--model_names', action='append', default=[])
+    parser.add_argument('--data_cfg', action='append', default=[])
+
     run()

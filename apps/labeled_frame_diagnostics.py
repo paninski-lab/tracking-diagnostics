@@ -9,12 +9,26 @@ The app creates plots for:
 to run from command line:
 > streamlit run /path/to/labeled_frame_diagnostics.py
 
+optionally, a ground truth labels file can be specified from the command line
+(note the two sets of double dashes):
+> streamlit run /path/to/labeled_frame_diagnostics.py -- --labels_csv=/path/to/file.csv
+
+optionally, multiple prediction files can be specified from the command line; each must be
+preceded by "--prediction_files":
+> streamlit run /path/to/labeled_frame_diagnostics.py --
+--prediction_files=/path/to/pred0.csv --prediction_files=/path/to/pred1.csv
+
+optionally, a data config file can be specified from the command line
+> streamlit run /path/to/labeled_frame_diagnostics.py -- --data_cfg=/path/to/cfg.yaml
+
 """
 
+import argparse
 import matplotlib.pyplot as plt
 import streamlit as st
 import seaborn as sns
 import pandas as pd
+from pathlib import Path
 import plotly.express as px
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
@@ -35,6 +49,7 @@ from diagnostics.streamlit import build_pca_loss_object
 from diagnostics.streamlit import concat_dfs
 from diagnostics.streamlit import compute_metric_per_dataset
 from diagnostics.streamlit import make_seaborn_catplot
+from diagnostics.streamlit import update_single_file, update_file_list
 
 
 # TODO
@@ -43,17 +58,41 @@ from diagnostics.streamlit import make_seaborn_catplot
 # - show image on hover?
 
 
+@st.cache(allow_output_mutation=True)
+def update_cfg_file(curr_file, new_file_list):
+    """Cannot use `update_single_file` for both or there will be cache collisons."""
+    if curr_file is None and len(new_file_list) > 0:
+        # pull file from cli args; wrap in Path so that it looks like an UploadedFile object
+        # returned by streamlit's file_uploader
+        ret_file = Path(new_file_list[0])
+    else:
+        ret_file = curr_file
+    return ret_file
+
+
 def run():
+
+    args = parser.parse_args()
 
     st.title("Labeled Frame Diagnostics")
 
     st.sidebar.header("Data Settings")
-    label_file: list = st.sidebar.file_uploader(
-        "Choose CSV file with labeled data", accept_multiple_files=False
+
+    # select ground truth label file from file system
+    label_file_: list = st.sidebar.file_uploader(
+        "Choose CSV file with labeled data", accept_multiple_files=False, type="csv",
     )
-    prediction_files: list = st.sidebar.file_uploader(
-        "Choose one or more prediction CSV files", accept_multiple_files=True
+    # check to see if a label file was provided externally via cli arg
+    label_file = update_single_file(label_file_, args.labels_csv)
+    # if label_file is not None:
+    #     dframe_gt = pd.read_csv(label_file, header=[1, 2], index_col=0)
+    #     st.text(dframe_gt.head())
+
+    prediction_files_: list = st.sidebar.file_uploader(
+        "Choose one or more prediction CSV files", accept_multiple_files=True, type="csv",
     )
+    # check to see if a prediction files were provided externally via cli arg
+    prediction_files, using_cli_preds = update_file_list(prediction_files_, args.prediction_files)
 
     # col wrap when plotting results from all keypoints
     n_cols = 3
@@ -72,11 +111,17 @@ def run():
         # ---------------------------------------------------
 
         # read dataframes into a dict with keys=filenames
+        # dframe_gt = load_df(label_file, header=[1, 2], index_col=0)
         dframe_gt = pd.read_csv(label_file, header=[1, 2], index_col=0)
+        if not isinstance(label_file, Path):
+            label_file.seek(0)  # reset buffer after reading
 
         dframes = {}
-        for prediction_file in prediction_files:
-            if prediction_file.name in dframes.keys():
+        for p, prediction_file in enumerate(prediction_files):
+            if using_cli_preds and len(args.model_names) > 0:
+                # use provided names from cli if applicable
+                filename = args.model_names[p]
+            elif prediction_file.name in dframes.keys():
                 # append new integer to duplicate filenames
                 idx = 0
                 new_name = "%s_0" % prediction_file.name
@@ -87,6 +132,8 @@ def run():
             else:
                 filename = prediction_file.name
             dframe = pd.read_csv(prediction_file, header=[1, 2], index_col=0)
+            if not isinstance(prediction_file, Path):
+                prediction_file.seek(0)  # reset buffer after reading
             dframes[filename] = dframe
             data_types = dframe.iloc[:, -1].unique()
             # if dframes[prediction_file.name].keys()[-1][0] != "set":
@@ -111,11 +158,17 @@ def run():
         # compute metrics
         # ---------------------------------------------------
 
-        uploaded_cfg: str = st.sidebar.file_uploader(
-            "Select data config yaml (optional, for pca losses)", accept_multiple_files=False
+        uploaded_cfg_: str = st.sidebar.file_uploader(
+            "Select data config yaml (optional, for pca losses)", accept_multiple_files=False,
+            type="yaml",
         )
+        uploaded_cfg = update_cfg_file(uploaded_cfg_, args.data_cfg)
         if uploaded_cfg is not None:
-            cfg = DictConfig(yaml.safe_load(uploaded_cfg))
+            if isinstance(uploaded_cfg, Path):
+                cfg = DictConfig(yaml.safe_load(open(uploaded_cfg)))
+            else:
+                cfg = DictConfig(yaml.safe_load(uploaded_cfg))
+                uploaded_cfg.seek(0)  # reset buffer after reading
         else:
             cfg = None
 
@@ -268,4 +321,12 @@ def run():
 
 
 if __name__ == "__main__":
+
+    parser = argparse.ArgumentParser()
+
+    parser.add_argument('--labels_csv', action='append', default=[])
+    parser.add_argument('--prediction_files', action='append', default=[])
+    parser.add_argument('--model_names', action='append', default=[])
+    parser.add_argument('--data_cfg', action='append', default=[])
+
     run()
