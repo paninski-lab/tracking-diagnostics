@@ -37,11 +37,11 @@ def run():
         model_names=args.model_names,
         video=args.video_file,
         save_file=args.save_file,
-        likelihood_thresh=args.likelihood_thresh,
-        max_frames=args.max_frames,
-        markersize=args.markersize,
-        framerate=args.framerate,
-        height=args.height,
+        likelihood_thresh=float(args.likelihood_thresh),
+        max_frames=int(args.max_frames),
+        markersize=int(args.markersize),
+        framerate=float(args.framerate),
+        height=float(args.height),
     )
 
 
