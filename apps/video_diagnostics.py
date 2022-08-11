@@ -166,7 +166,7 @@ def run():
 
         uploaded_cfg_: str = st.sidebar.file_uploader(
             "Select data config yaml (optional, for pca losses)", accept_multiple_files=False,
-            type="yaml",
+            type=["yaml", "yml"],
         )
         uploaded_cfg = update_single_file(uploaded_cfg_, args.data_cfg)
 
