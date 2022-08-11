@@ -4,6 +4,7 @@ import numpy as np
 import os
 import shutil
 import subprocess
+from typing import Optional
 
 from diagnostics.utils import load_marker_csv
 
@@ -131,8 +132,16 @@ def make_labeled_video(
 
 
 def make_labeled_video_wrapper(
-        csvs, model_names, video, save_file, likelihood_thresh=0.05, max_frames=None, markersize=6,
-        framerate=20, height=4):
+        csvs: list,
+        model_names: list,
+        video: str,
+        save_file: str,
+        likelihood_thresh: float = 0.05,
+        max_frames: Optional[int] = None,
+        markersize: int = 6,
+        framerate: float = 20,
+        height: float = 4
+    ):
     """
 
     Parameters
