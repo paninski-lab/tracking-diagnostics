@@ -18,6 +18,12 @@ preceded by "--prediction_files":
 > streamlit run /path/to/labeled_frame_diagnostics.py --
 --prediction_files=/path/to/pred0.csv --prediction_files=/path/to/pred1.csv
 
+optionally, names for each prediction file can be specified from the command line; each must be
+preceded by "--model_names":
+> streamlit run /path/to/labeled_frame_diagnostics.py --
+--prediction_files=/path/to/pred0.csv --model_names=model0
+--prediction_files=/path/to/pred1.csv --model_names=model1
+
 optionally, a data config file can be specified from the command line
 > streamlit run /path/to/labeled_frame_diagnostics.py -- --data_cfg=/path/to/cfg.yaml
 
