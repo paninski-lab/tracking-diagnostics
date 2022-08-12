@@ -10,3 +10,5 @@ def get_y_label(to_compute: str) -> str:
         return "Multiview PCA \n reconstruction error (pix.)"
     elif to_compute == "pca_singleview":
         return "Low-dimensional PCA \n reconstruction error (pix.)"
+    elif to_compute == "conf" or to_compute == "confidence":
+        return "Confidence"

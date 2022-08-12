@@ -3,6 +3,7 @@
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
+from pathlib import Path
 import seaborn as sns
 import streamlit as st
 from typing import List, Dict, Tuple, Optional
@@ -16,6 +17,32 @@ from lightning_pose.utils.scripts import (
 from diagnostics.handler import ModelHandler
 from diagnostics.metrics import rmse
 from diagnostics.metrics import pca_reprojection_error_per_keypoint
+
+
+@st.cache(allow_output_mutation=True)
+def update_single_file(curr_file, new_file_list):
+    if curr_file is None and len(new_file_list) > 0:
+        # pull file from cli args; wrap in Path so that it looks like an UploadedFile object
+        # returned by streamlit's file_uploader
+        ret_file = Path(new_file_list[0])
+    else:
+        ret_file = curr_file
+    return ret_file
+
+
+@st.cache(allow_output_mutation=True)
+def update_file_list(curr_file_list, new_file_list):
+    use_cli_preds = False
+    if len(curr_file_list) == 0 and len(new_file_list) > 0:
+        # pull label file from cli args; wrap in Path so that it looks like an UploadedFile object
+        # returned by streamlit's file_uploader
+        ret_files = []
+        for file in new_file_list:
+            ret_files.append(Path(file))
+        use_cli_preds = True
+    else:
+        ret_files = curr_file_list
+    return ret_files, use_cli_preds
 
 
 @st.cache
@@ -46,6 +73,34 @@ def get_full_name(keypoint: str, coordinate: str, model: str) -> str:
 
 def get_col_names(keypoint: str, coordinate: str, models: List[str]) -> List[str]:
     return [get_full_name(keypoint, coordinate, model) for model in models]
+
+
+@st.cache
+def get_df_box(df_orig, keypoint_names, model_names):
+    df_boxes = []
+    for keypoint in keypoint_names:
+        for model_curr in model_names:
+            tmp_dict = {
+                "keypoint": keypoint,
+                "metric": "Pixel error",
+                "value": df_orig[df_orig.model_name == model_curr][keypoint],
+                "model_name": model_curr,
+            }
+            df_boxes.append(pd.DataFrame(tmp_dict))
+    return pd.concat(df_boxes)
+
+
+@st.cache
+def get_df_scatter(df_0, df_1, data_type):
+    df_scatters = []
+    for keypoint in keypoint_names:
+        df_scatters.append(pd.DataFrame({
+            "img_file": df_0.img_file[df_0.set == data_type],
+            "keypoint": keypoint,
+            model_0: df_0[keypoint][df_0.set == data_type],
+            model_1: df_1[keypoint][df_1.set == data_type],
+        }))
+    return pd.concat(df_scatters)
 
 
 @st.cache(hash_funcs={PCALoss: lambda _: None})  # streamlit doesn't know how to hash PCALoss
