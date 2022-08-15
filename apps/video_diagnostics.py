@@ -46,7 +46,7 @@ from diagnostics.streamlit import get_col_names
 from diagnostics.streamlit import concat_dfs
 from diagnostics.streamlit import compute_metric_per_dataset
 from diagnostics.streamlit import build_pca_loss_object
-from diagnostics.streamlit import make_seaborn_catplot
+from diagnostics.visualizations import make_seaborn_catplot
 from diagnostics.streamlit import update_single_file, update_file_list
 
 

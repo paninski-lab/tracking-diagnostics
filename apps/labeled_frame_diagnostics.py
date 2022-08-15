@@ -30,14 +30,15 @@ optionally, a data config file can be specified from the command line
 """
 
 import argparse
+from datetime import datetime
 import matplotlib.pyplot as plt
+import numpy as np
 import streamlit as st
 import seaborn as sns
 import pandas as pd
 from pathlib import Path
 import plotly.express as px
 import plotly.graph_objects as go
-from plotly.subplots import make_subplots
 import numpy as np
 from omegaconf import DictConfig
 import os
@@ -50,12 +51,13 @@ from lightning_pose.utils.scripts import (
     get_imgaug_transform, get_dataset, get_data_module, get_loss_factories,
 )
 
+from diagnostics.reports import generate_report_labeled
 from diagnostics.streamlit import get_df_box, get_df_scatter
 from diagnostics.streamlit import build_pca_loss_object
 from diagnostics.streamlit import concat_dfs
 from diagnostics.streamlit import compute_metric_per_dataset
-from diagnostics.streamlit import make_seaborn_catplot
 from diagnostics.streamlit import update_single_file, update_file_list
+from diagnostics.visualizations import make_seaborn_catplot, get_y_label
 
 
 # TODO
@@ -74,6 +76,16 @@ def update_cfg_file(curr_file, new_file_list):
     else:
         ret_file = curr_file
     return ret_file
+
+
+def increase_submits(n_submits=0):
+    return n_submits + 1
+
+
+st.session_state["n_submits"] = 0
+
+catplot_options = ["boxen", "box", "bar", "violin", "strip"]
+scale_options = ["linear", "log"]
 
 
 def run():
@@ -209,12 +221,7 @@ def run():
 
         # choose which metric to plot
         metric_to_plot = st.selectbox("Select a metric:", metric_options, key="metric")
-        if metric_to_plot == pix_error_key:
-            y_label = "Pixel Error"
-        elif metric_to_plot == pcamv_error_key:
-            y_label = "Multiview PCA Reproj Error (pix)"
-        elif metric_to_plot == pcasv_error_key:
-            y_label = "Singleview PCA Reproj Error (pix)"
+        y_label = get_y_label(metric_to_plot)
 
         # choose data split - train/val/test/unused
         data_type = st.selectbox("Select data partition:", data_types, key="data partition")
@@ -226,12 +233,13 @@ def run():
         st.header("Compare multiple models")
 
         # enumerate plotting options
-        plot_type = st.selectbox("Pick a plot type:", ["boxen", "box", "bar", "violin", "strip"])
-        plot_scale = st.radio("Select y-axis scale", ["linear", "log"])
+        plot_type = st.selectbox("Pick a plot type:", catplot_options)
+        plot_scale = st.radio("Select y-axis scale", scale_options)
 
         # filter data
         big_df_filtered = big_df[metric_to_plot][big_df[metric_to_plot].set == data_type]
         n_frames_per_dtype = big_df_filtered.shape[0] // len(prediction_files)
+        # print(big_df[metric_to_plot].head())
 
         # plot data
         title = '%s (%i %s frames)' % (keypoint_to_plot, n_frames_per_dtype, data_type)
@@ -279,7 +287,8 @@ def run():
 
         if keypoint_to_plot == "ALL":
 
-            df_scatter = get_df_scatter(df_tmp0, df_tmp1, data_type)
+            df_scatter = get_df_scatter(
+                df_tmp0, df_tmp1, data_type, [model_0, model_1], keypoint_names)
 
             fig_scatter = px.scatter(
                 df_scatter,
@@ -324,6 +333,95 @@ def run():
         fig_scatter.update_layout(title=title, width=fig_width, height=fig_height)
         fig_scatter.update_traces(marker={'size': 5})
         st.plotly_chart(fig_scatter)
+
+        # ---------------------------------------------------
+        # generate report
+        # ---------------------------------------------------
+        st.subheader("Generate diagnostic report")
+
+        # select save directory
+        run_date_time = datetime.today().strftime('%Y-%m-%d_%H-%M-%S')
+        # save_dir_default = os.path.join(os.getcwd(), run_date_time)
+        st.text("current directory: %s" % os.getcwd())
+        save_dir_ = st.text_input("Enter path of directory in which to save report")
+        save_dir = os.path.join(save_dir_, "litpose_report_%s" % run_date_time)
+
+        rpt_save_format = st.selectbox("Select figure format", ["pdf", "png"])
+
+        st.markdown("""
+            Click the `Generate Report` button below to automatically save out all plots. 
+            Each available metric will be plotted. Options such as the data partition, plot type,
+            etc. will be the same as those selected above. For each metric there will be one 
+            overview plot that shows metrics for each individual keypoint, as well as another plot
+            that shows the metric averaged across all keypoints.        
+            """)
+
+        # # enumerate plotting options (boxes)
+        # st.markdown("###### Multi-model (catplot) plotting options")
+        # rpt_boxplot_type = st.selectbox(
+        #     "Pick a plot type:", catplot_options, key="boxplot type report")
+        # rpt_boxplot_dtype = st.selectbox(
+        #     "Select data partition:", data_types, key="boxplot dtype report")
+        # rpt_boxplot_scale = st.radio(
+        #     "Select y-axis scale", scale_options, key="boxplot scale report")
+        #
+        # # enumerate plotting options (scatters)
+        # st.markdown("###### Two-model (scatterplot) plotting options")
+        # rpt_scatter_dtype = st.selectbox(
+        #     "Select data partition:", data_types, key="scatter dtype report")
+        # rpt_scatter_scale = st.radio(
+        #     "Select y-axis scale", scale_options, key="scatter scale report")
+        # if len(new_names) > 1:
+        #     idx_0 = int(np.where(np.array(new_names) == model_0)[0][0])
+        #     idx_1 = int(np.where(np.array(new_names) == model_1)[0][0])
+        # else:
+        #     idx_0 = 0
+        #     idx_1 = 0
+        # rpt_model_0 = st.selectbox("Model 0 (x-axis):", new_names, index=idx_0)
+        # rpt_model_1 = st.selectbox("Model 1 (y-axis):", new_names, index=idx_1)
+
+        rpt_boxplot_type = plot_type
+        rpt_boxplot_scale = plot_scale
+        rpt_boxplot_dtype = data_type
+        rpt_scatter_scale = plot_scatter_scale
+        rpt_scatter_dtype = data_type
+        rpt_model_0 = model_0
+        rpt_model_1 = model_1
+
+        # enumerate save options
+        savefig_kwargs = {}
+
+        submit_report = st.button("Generate report")
+        if submit_report:
+            if "n_submits" not in st.session_state:
+                st.session_state["n_submits"] = 0
+            else:
+                st.session_state["n_submits"] = increase_submits(st.session_state["n_submits"])
+            generate_report_labeled(
+                df=big_df,
+                keypoint_names=keypoint_names,
+                model_names=new_names,
+                save_dir=save_dir,
+                format=rpt_save_format,
+                box_kwargs={
+                    "plot_type": rpt_boxplot_type,
+                    "plot_scale": rpt_boxplot_scale,
+                    "data_type": rpt_boxplot_dtype,
+                },
+                scatter_kwargs={
+                    "plot_scale": rpt_scatter_scale,
+                    "data_type": rpt_scatter_dtype,
+                    "model_0": rpt_model_0,
+                    "model_1": rpt_model_1,
+                },
+                savefig_kwargs=savefig_kwargs,
+            )
+
+        if st.session_state["n_submits"] > 0:
+            msg = "Report directory located at %s" % save_dir
+            st.markdown(
+                "<p style='font-family:sans-serif; color:Green;'>%s</p>" % msg,
+                unsafe_allow_html=True)
 
 
 if __name__ == "__main__":

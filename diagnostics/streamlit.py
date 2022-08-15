@@ -1,12 +1,10 @@
 """Utility functions for streamlit apps."""
 
-import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 from pathlib import Path
-import seaborn as sns
 import streamlit as st
-from typing import List, Dict, Tuple, Optional
+from typing import List, Dict, Tuple
 
 from lightning_pose.losses.losses import PCALoss
 from lightning_pose.utils.io import return_absolute_data_paths
@@ -17,6 +15,8 @@ from lightning_pose.utils.scripts import (
 from diagnostics.handler import ModelHandler
 from diagnostics.metrics import rmse
 from diagnostics.metrics import pca_reprojection_error_per_keypoint
+from diagnostics.visualizations import get_df_box as get_df_box_
+from diagnostics.visualizations import get_df_scatter as get_df_scatter_
 
 
 @st.cache(allow_output_mutation=True)
@@ -77,30 +77,14 @@ def get_col_names(keypoint: str, coordinate: str, models: List[str]) -> List[str
 
 @st.cache
 def get_df_box(df_orig, keypoint_names, model_names):
-    df_boxes = []
-    for keypoint in keypoint_names:
-        for model_curr in model_names:
-            tmp_dict = {
-                "keypoint": keypoint,
-                "metric": "Pixel error",
-                "value": df_orig[df_orig.model_name == model_curr][keypoint],
-                "model_name": model_curr,
-            }
-            df_boxes.append(pd.DataFrame(tmp_dict))
-    return pd.concat(df_boxes)
+    """streamlit wrapper with cache"""
+    return get_df_box_(df_orig, keypoint_names, model_names)
 
 
 @st.cache
-def get_df_scatter(df_0, df_1, data_type):
-    df_scatters = []
-    for keypoint in keypoint_names:
-        df_scatters.append(pd.DataFrame({
-            "img_file": df_0.img_file[df_0.set == data_type],
-            "keypoint": keypoint,
-            model_0: df_0[keypoint][df_0.set == data_type],
-            model_1: df_1[keypoint][df_1.set == data_type],
-        }))
-    return pd.concat(df_scatters)
+def get_df_scatter(df_0, df_1, data_type, model_names, keypoint_names):
+    """streamlit wrapper with cache"""
+    return get_df_scatter_(df_0, df_1, data_type, model_names, keypoint_names)
 
 
 @st.cache(hash_funcs={PCALoss: lambda _: None})  # streamlit doesn't know how to hash PCALoss
@@ -271,31 +255,6 @@ def build_pca_loss_object(cfg):
     loss_factories = get_loss_factories(cfg=cfg, data_module=data_module)
     pca_loss = loss_factories["unsupervised"].loss_instance_dict[cfg.model.losses_to_use[0]]
     return pca_loss
-
-
-def make_seaborn_catplot(
-        x, y, data, x_label, y_label, title, log_y=False, plot_type="box", figsize=(5, 5)):
-    sns.set_context("paper")
-    fig = plt.figure(figsize=figsize)
-    if plot_type == "box":
-        sns.boxplot(x=x, y=y, data=data)
-    elif plot_type == "boxen":
-        sns.boxenplot(x=x, y=y, data=data)
-    elif plot_type == "bar":
-        sns.barplot(x=x, y=y, data=data)
-    elif plot_type == "violin":
-        sns.violinplot(x=x, y=y, data=data)
-    elif plot_type == "strip":
-        sns.stripplot(x=x, y=y, data=data)
-    else:
-        raise NotImplementedError
-    ax = fig.gca()
-    ax.set_yscale("log") if log_y else ax.set_yscale("linear")
-    ax.set_xlabel(x_label)
-    ax.set_ylabel(y_label)
-    fig.subplots_adjust(top=0.95)
-    fig.suptitle(title)
-    return fig
 
 
 # Plotly catplot
