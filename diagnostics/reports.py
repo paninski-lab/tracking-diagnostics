@@ -1,3 +1,5 @@
+"""Output a collection of plots that parallel those provided by the streamlit apps."""
+
 import matplotlib.pyplot as plt
 import numpy as np
 import os
@@ -6,8 +8,10 @@ import plotly.express as px
 import plotly.graph_objects as go
 import seaborn as sns
 
+from diagnostics.streamlit import get_col_names
 from diagnostics.visualizations import get_df_box, get_df_scatter
 from diagnostics.visualizations import get_y_label, make_seaborn_catplot
+from diagnostics.visualizations import plot_traces
 
 
 def update_kwargs_dict_with_defaults(kwargs_new, kwargs_default):
@@ -71,6 +75,7 @@ def generate_report_labeled(
             kind=box_kwargs["plot_type"], data=df_box, height=2)
         fig_box.set_axis_labels("Model Name", y_label)
         fig_box.set_xticklabels(rotation=45, ha="right")
+        fig_box.set(yscale=box_kwargs["plot_scale"])
         fig_box.fig.subplots_adjust(top=0.94)
         fig_box.fig.suptitle(title)
         save_file = os.path.join(
@@ -102,10 +107,10 @@ def generate_report_labeled(
         df_tmp1 = df[metric_to_plot][df[metric_to_plot].model_name == model_1]
 
         y_label = get_y_label(metric_to_plot)
-        xlabel_ = "%s (%s)" % (y_label, model_0)
-        ylabel_ = "%s (%s)" % (y_label, model_1)
+        xlabel_ = "%s<br>(%s)" % (y_label, model_0)
+        ylabel_ = "%s<br>(%s)" % (y_label, model_1)
 
-        log_scatter = True if scatter_kwargs["plot_scale"] == "log" else False
+        log_scatter = False if scatter_kwargs["plot_scale"] == "linear" else True
 
         # ---------------
         # plot ALL data
@@ -171,3 +176,78 @@ def generate_report_labeled(
         save_file = os.path.join(
             save_dir, "labeled-diagnostics_scatterplot-mean_%s.%s" % (metric_to_plot, format))
         fig_scatter.write_image(save_file)
+
+
+def generate_report_video(
+        df_traces,
+        df_metrics,
+        keypoint_names,
+        model_names,
+        save_dir,
+        format="pdf",
+        box_kwargs={},
+        trace_kwargs={},
+        savefig_kwargs={}
+):
+
+    if not os.path.exists(save_dir):
+        os.makedirs(save_dir)
+
+    # parse inputs
+    box_kwargs_default = {
+        "plot_type": "boxen",
+        "plot_scale": "log",
+    }
+    box_kwargs = update_kwargs_dict_with_defaults(box_kwargs, box_kwargs_default)
+
+    trace_kwargs_default = {
+        "models": [],
+    }
+    trace_kwargs = update_kwargs_dict_with_defaults(trace_kwargs, trace_kwargs_default)
+
+    metrics_to_plot = df_metrics.keys()
+
+    # ---------------------------------------------------
+    # plot metrics for all models (catplot)
+    # ---------------------------------------------------
+    for metric_to_plot in metrics_to_plot:
+
+        x_label = "Model Name"
+        y_label = get_y_label(metric_to_plot)
+
+        # ---------------
+        # plot ALL data
+        # ---------------
+        df_tmp = df_metrics[metric_to_plot].melt(id_vars="model_name")
+        df_tmp = df_tmp.rename(columns={"variable": "keypoint"})
+        fig_box = sns.catplot(
+            data=df_tmp, x="model_name", y="value", col="keypoint", col_wrap=3,
+            kind=box_kwargs["plot_type"]
+        )
+        fig_box.set(yscale=box_kwargs["plot_scale"])
+        save_file = os.path.join(
+            save_dir, "video-diagnostics_barplot-all_%s.%s" % (metric_to_plot, format))
+        plt.savefig(save_file, dpi=300, format=format, **savefig_kwargs)
+
+        # ---------------
+        # plot mean data
+        # ---------------
+        log_y = False if box_kwargs["plot_scale"] == "linear" else True
+        make_seaborn_catplot(
+            x="model_name", y="mean", data=df_metrics[metric_to_plot], log_y=log_y,
+            x_label=x_label, y_label=y_label, title="Average over all keypoints",
+            plot_type=box_kwargs["plot_type"])
+        save_file = os.path.join(
+            save_dir, "video-diagnostics_barplot-mean_%s.%s" % (metric_to_plot, format))
+        plt.savefig(save_file, dpi=300, format=format, **savefig_kwargs)
+
+    # ---------------------------------------------------
+    # plot traces
+    # ---------------------------------------------------
+    for keypoint in keypoint_names:
+
+        cols = get_col_names(keypoint, "x", trace_kwargs["models"])
+        fig_traces = plot_traces(df_metrics, df_traces, cols)
+        save_file = os.path.join(
+            save_dir, "video-diagnostics_traces-%s.%s" % (keypoint, format))
+        fig_traces.write_image(save_file)

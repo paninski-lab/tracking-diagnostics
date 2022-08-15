@@ -26,28 +26,28 @@ optionally, a data config file can be specified from the command line
 
 """
 
-# from email.mime import base
-# from urllib.parse import _NetlocResultMixinBase
-# from grpc import dynamic_ssl_server_credentials
 import argparse
+from datetime import datetime
 import numpy as np
 from omegaconf import DictConfig
 import os
 import pandas as pd
 from pathlib import Path
 import plotly.express as px
-import plotly.graph_objects as go
-from plotly.subplots import make_subplots
+import seaborn as sns
 import streamlit as st
 from typing import List, Dict, Tuple, Optional
 import yaml
 
+from diagnostics.reports import generate_report_video
 from diagnostics.streamlit import get_col_names
 from diagnostics.streamlit import concat_dfs
 from diagnostics.streamlit import compute_metric_per_dataset
 from diagnostics.streamlit import build_pca_loss_object
-from diagnostics.visualizations import make_seaborn_catplot
 from diagnostics.streamlit import update_single_file, update_file_list
+from diagnostics.visualizations import make_seaborn_catplot, get_y_label, plot_traces
+from diagnostics.visualizations import \
+    conf_error_key, temp_norm_error_key, pcamv_error_key, pcasv_error_key
 
 
 def make_plotly_catplot(x, y, data, x_label, y_label, title, plot_type="box"):
@@ -64,6 +64,16 @@ def make_plotly_catplot(x, y, data, x_label, y_label, title, plot_type="box"):
     return fig
 
 
+def increase_submits(n_submits=0):
+    return n_submits + 1
+
+
+st.session_state["n_submits"] = 0
+
+catplot_options = ["boxen", "box", "bar", "violin", "strip"]
+scale_options = ["linear", "log"]
+
+
 def run():
 
     args = parser.parse_args()
@@ -76,6 +86,9 @@ def run():
     )
     # check to see if a prediction files were provided externally via cli arg
     uploaded_files, using_cli_preds = update_file_list(uploaded_files_, args.prediction_files)
+
+    metric_options = []
+    big_df = {}
 
     if len(uploaded_files) > 0:  # otherwise don't try to proceed
 
@@ -119,166 +132,97 @@ def run():
         df_concat, keypoint_names = concat_dfs(dframes)
 
         # ---------------------------------------------------
-        # plot temporal norms
+        # compute metrics
         # ---------------------------------------------------
-
-        st.header("Temporal loss diagnostics")
-        x_label = "Model Name"
-        y_label_tn = "Temporal Norm (pix)"
-
-        big_df_temp_norm = compute_metric_per_dataset(
-            dfs=dframes, metric="temporal_norm", keypoint_names=keypoint_names)
-        # disp_temp_norms_head = st.checkbox("Display norms DataFrame")
-        # if disp_temp_norms_head:
-        #     st.write("Temporal norms dataframe:")
-        #     st.write(big_df_temp_norm.head())
-
-        # plot diagnostic averaged overall all keypoints
-        plot_type_tn = st.selectbox(
-            "Select a plot type:", ["boxen", "box", "bar", "violin", "strip"], key="plot_type_tn")
-        plot_scale_tn = st.radio("Select y-axis scale", ["linear", "log"], key="plot_scale_tn")
-        log_y_tn = False if plot_scale_tn == "linear" else True
-        fig_cat_tn = make_seaborn_catplot(
-            x="model_name", y="mean", data=big_df_temp_norm, log_y=log_y_tn, x_label=x_label,
-            y_label=y_label_tn, title="Average over all keypoints", plot_type=plot_type_tn)
-        st.pyplot(fig_cat_tn)
-
-        # select keypoint to plot
-        keypoint_temp_norm = st.selectbox(
-            "Select a keypoint:", pd.Series([*keypoint_names, "mean"]), key="keypoint_temp_norm",
-        )
-
-        # show boxplot per keypoint
-        fig_box_tn = make_plotly_catplot(
-            x="model_name", y=keypoint_temp_norm, data=big_df_temp_norm, x_label=x_label,
-            y_label=y_label_tn, title=keypoint_temp_norm, plot_type="box")
-        st.plotly_chart(fig_box_tn)
-
-        # show histogram per keypoint
-        fig_hist_tn = make_plotly_catplot(
-            x=keypoint_temp_norm, y=None, data=big_df_temp_norm, x_label=y_label_tn,
-            y_label="Frame count", title=keypoint_temp_norm, plot_type="hist"
-        )
-        st.plotly_chart(fig_hist_tn)
-
-        # # per keypoint
-        # df_violin = big_df_norms.melt(id_vars="model_name")
-        # fig = px.box(df_violin, x="model_name", y="value", color="variable", points=False)
-        # st.plotly_chart(fig)
-
-        # ---------------------------------------------------
-        # plot pca reprojection errors
-        # ---------------------------------------------------
-
         uploaded_cfg_: str = st.sidebar.file_uploader(
             "Select data config yaml (optional, for pca losses)", accept_multiple_files=False,
             type=["yaml", "yml"],
         )
         uploaded_cfg = update_single_file(uploaded_cfg_, args.data_cfg)
-
         if uploaded_cfg is not None:
-
             if isinstance(uploaded_cfg, Path):
                 cfg = DictConfig(yaml.safe_load(open(uploaded_cfg)))
             else:
                 cfg = DictConfig(yaml.safe_load(uploaded_cfg))
                 uploaded_cfg.seek(0)  # reset buffer after reading
+        else:
+            cfg = None
 
-            # ---------------------------------------------------
-            # pca multiview
-            # ---------------------------------------------------
-            if cfg.data.get("mirrored_column_matches", None):
+        # confidence
+        big_df[conf_error_key] = compute_metric_per_dataset(
+            dfs=dframes, metric="confidence", keypoint_names=keypoint_names)
+        metric_options += [conf_error_key]
 
-                st.header("PCA multiview loss diagnostics")
-                y_label_pcamv = "Multiview PCA Reprojection Error (pix)"
+        # temporal norm
+        big_df[temp_norm_error_key] = compute_metric_per_dataset(
+            dfs=dframes, metric="temporal_norm", keypoint_names=keypoint_names)
+        metric_options += [temp_norm_error_key]
 
-                cfg_pcamv = cfg.copy()
-                cfg_pcamv.model.losses_to_use = ["pca_multiview"]
+        # pca multiview
+        if cfg is not None and cfg.data.get("mirrored_column_matches", None):
+            cfg_pcamv = cfg.copy()
+            cfg_pcamv.model.losses_to_use = ["pca_multiview"]
+            pcamv_loss = build_pca_loss_object(cfg_pcamv)
+            big_df[pcamv_error_key] = compute_metric_per_dataset(
+                dfs=dframes, metric="pca_mv", keypoint_names=keypoint_names, cfg=cfg_pcamv,
+                pca_loss=pcamv_loss)
+            metric_options += [pcamv_error_key]
 
-                # compute pca loss
-                pcamv_loss = build_pca_loss_object(cfg_pcamv)
-                big_df_pcamv = compute_metric_per_dataset(
-                    dfs=dframes, metric="pca_mv", keypoint_names=keypoint_names, cfg=cfg_pcamv,
-                    pca_loss=pcamv_loss)
+        # pca singleview
+        if cfg is not None and cfg.data.get("columns_for_singleview_pca", None):
+            cfg_pcasv = cfg.copy()
+            cfg_pcasv.model.losses_to_use = ["pca_singleview"]
+            pcasv_loss = build_pca_loss_object(cfg_pcasv)
+            big_df[pcasv_error_key] = compute_metric_per_dataset(
+                dfs=dframes, metric="pca_sv", keypoint_names=keypoint_names, cfg=cfg_pcasv,
+                pca_loss=pcasv_loss)
+            metric_options += [pcasv_error_key]
 
-                # plot diagnostic averaged overall all keypoints
-                plot_type_pcamv = st.selectbox(
-                    "Select a plot type:", ["boxen", "box", "bar", "violin", "strip"],
-                    key="plot_type_pcamv")
-                plot_scale_pcamv = st.radio(
-                    "Select y-axis scale", ["linear", "log"], key="plot_scale_pcamv")
-                log_y_pcamv = False if plot_scale_pcamv == "linear" else True
-                fig_cat_pcamv = make_seaborn_catplot(
-                    x="model_name", y="mean", data=big_df_pcamv, log_y=log_y_pcamv,
-                    x_label=x_label, y_label=y_label_pcamv, title="Average over all keypoints",
-                    plot_type=plot_type_pcamv)
-                st.pyplot(fig_cat_pcamv)
+        # ---------------------------------------------------
+        # plot diagnostics
+        # ---------------------------------------------------
 
-                # select keypoint to plot
-                keypoint_pcamv = st.selectbox(
-                    "Select a keypoint:", pd.Series([*keypoint_names, "mean"]), key="keypoint_pcamv",
-                )
+        # choose which metric to plot
+        metric_to_plot = st.selectbox("Select a metric:", metric_options, key="metric")
 
-                # show boxplot per keypoint
-                fig_box_pcamv = make_plotly_catplot(
-                    x="model_name", y=keypoint_pcamv, data=big_df_pcamv, x_label=x_label,
-                    y_label=y_label_pcamv, title=keypoint_pcamv, plot_type="box")
-                st.plotly_chart(fig_box_pcamv)
+        x_label = "Model Name"
+        y_label = get_y_label(metric_to_plot)
 
-                # show histogram per keypoint
-                fig_hist_pcamv = make_plotly_catplot(
-                    x=keypoint_pcamv, y=None, data=big_df_pcamv, x_label=y_label_pcamv,
-                    y_label="Frame count", title=keypoint_pcamv, plot_type="hist"
-                )
-                st.plotly_chart(fig_hist_pcamv)
+        # plot diagnostic averaged overall all keypoints
+        plot_type = st.selectbox(
+            "Select a plot type:", ["boxen", "box", "bar", "violin", "strip"], key="plot_type")
+        plot_scale = st.radio("Select y-axis scale", ["linear", "log"], key="plot_scale")
+        log_y = False if plot_scale == "linear" else True
+        fig_cat = make_seaborn_catplot(
+            x="model_name", y="mean", data=big_df[metric_to_plot], log_y=log_y, x_label=x_label,
+            y_label=y_label, title="Average over all keypoints", plot_type=plot_type)
+        st.pyplot(fig_cat)
 
-            # ---------------------------------------------------
-            # pca singleview
-            # ---------------------------------------------------
-            if cfg.data.get("columns_for_singleview_pca", None):
+        # select keypoint to plot
+        keypoint_to_plot = st.selectbox(
+            "Select a keypoint:", pd.Series([*keypoint_names, "mean"]), key="keypoint_to_plot",
+        )
 
-                st.header("PCA singleview loss diagnostics")
-                y_label_pcasv = "Singleview PCA Reprojection Error (pix)"
+        # show boxplot per keypoint
+        fig_box = make_plotly_catplot(
+            x="model_name", y=keypoint_to_plot, data=big_df[metric_to_plot], x_label=x_label,
+            y_label=y_label, title=keypoint_to_plot, plot_type="box")
+        st.plotly_chart(fig_box)
 
-                cfg_pcasv = cfg.copy()
-                cfg_pcasv.model.losses_to_use = ["pca_singleview"]
+        # show histogram per keypoint
+        fig_hist = make_plotly_catplot(
+            x=keypoint_to_plot, y=None, data=big_df[metric_to_plot], x_label=y_label,
+            y_label="Frame count", title=keypoint_to_plot, plot_type="hist"
+        )
+        st.plotly_chart(fig_hist)
 
-                # compute pca loss
-                pcasv_loss = build_pca_loss_object(cfg_pcasv)
-                big_df_pcasv = compute_metric_per_dataset(
-                    dfs=dframes, metric="pca_sv", keypoint_names=keypoint_names, cfg=cfg_pcasv,
-                    pca_loss=pcasv_loss)
-
-                # plot diagnostic averaged overall all keypoints
-                plot_type_pcasv = st.selectbox(
-                    "Select a plot type:", ["boxen", "box", "bar", "violin", "strip"],
-                    key="plot_type_pcasv")
-                plot_scale_pcasv = st.radio(
-                    "Select y-axis scale", ["linear", "log"], key="plot_scale_pcasv")
-                log_y_pcasv = False if plot_scale_pcasv == "linear" else True
-                fig_cat_pcasv = make_seaborn_catplot(
-                    x="model_name", y="mean", data=big_df_pcasv, log_y=log_y_pcasv,
-                    x_label=x_label, y_label=y_label_pcasv, title="Average over all keypoints",
-                    plot_type=plot_type_pcasv)
-                st.pyplot(fig_cat_pcasv)
-
-                # select keypoint to plot
-                keypoint_pcasv = st.selectbox(
-                    "Select a keypoint:", pd.Series([*keypoint_names, "mean"]), key="keypoint_pcasv",
-                )
-
-                # show boxplot per keypoint
-                fig_box_pcasv = make_plotly_catplot(
-                    x="model_name", y=keypoint_pcasv, data=big_df_pcasv, x_label=x_label,
-                    y_label=y_label_pcasv, title=keypoint_pcasv, plot_type="box")
-                st.plotly_chart(fig_box_pcasv)
-
-                # show histogram per keypoint
-                fig_hist_pcasv = make_plotly_catplot(
-                    x=keypoint_pcasv, y=None, data=big_df_pcasv, x_label=y_label_pcasv,
-                    y_label="Frame count", title=keypoint_pcasv, plot_type="hist"
-                )
-                st.plotly_chart(fig_hist_pcasv)
+        # # print(big_df[metric_to_plot].head())
+        # df_tmp = big_df[metric_to_plot].melt(id_vars="model_name")
+        # # print(df_tmp.head())
+        # # print(df_tmp.columns)
+        # fig_cat2 = sns.catplot(data=df_tmp, x="model_name", y="value", col="variable", col_wrap=3)
+        # fig_cat2.set(yscale=plot_scale)
+        # st.pyplot(fig_cat2)
 
         # ---------------------------------------------------
         # plot traces
@@ -295,182 +239,67 @@ def run():
             "Select models:", pd.Series(list(dframes.keys())), default=list(dframes.keys())
         )
         keypoint = st.selectbox("Select a keypoint:", pd.Series(keypoint_names))
-        coordinate = "x"  # st.radio("Coordinate:", pd.Series(["x", "y"]))
-        cols = get_col_names(keypoint, coordinate, models)
-
-        colors = px.colors.qualitative.Plotly
-
-        rows = 3
-        row_heights = [2, 2, 0.75]
-        if "big_df_temp_norm" in locals():
-            rows += 1
-            row_heights.insert(0, 0.75)
-        if "big_df_pcamv" in locals():
-            rows += 1
-            row_heights.insert(0, 0.75)
-        if "big_df_pcasv" in locals():
-            rows += 1
-            row_heights.insert(0, 0.75)
-
-        fig_traces = make_subplots(
-            rows=rows, cols=1,
-            shared_xaxes=True,
-            x_title="Frame number",
-            row_heights=row_heights,
-            vertical_spacing=0.03,
-        )
-
-        yaxis_labels = {}
-        row = 1
-
-        # plot temporal norms
-        if "big_df_temp_norm" in locals():
-            for c, col in enumerate(cols):
-                pieces = col.split("_%s_" % coordinate)
-                assert len(pieces) == 2  # otherwise "_[x/y]_" appears in keypoint or model name :(
-                kp = pieces[0]
-                model = pieces[1]
-                fig_traces.add_trace(
-                    go.Scatter(
-                        name=col,
-                        x=np.arange(df_concat.shape[0]),
-                        y=big_df_temp_norm[kp][big_df_temp_norm.model_name == model],
-                        mode='lines',
-                        line=dict(color=colors[c]),
-                        showlegend=False,
-                    ),
-                    row=row, col=1
-                )
-            yaxis_labels['yaxis%i' % row] = "temporal<br>norm"
-            row += 1
-
-        # plot pca multiview reprojection errors
-        if "big_df_pcamv" in locals():
-            for c, col in enumerate(cols):
-                pieces = col.split("_%s_" % coordinate)
-                assert len(pieces) == 2  # otherwise "_[x/y]_" appears in keypoint or model name :(
-                kp = pieces[0]
-                model = pieces[1]
-                fig_traces.add_trace(
-                    go.Scatter(
-                        name=col,
-                        x=np.arange(df_concat.shape[0]),
-                        y=big_df_pcamv[kp][big_df_pcamv.model_name == model],
-                        mode='lines',
-                        line=dict(color=colors[c]),
-                        showlegend=False,
-                    ),
-                    row=row, col=1
-                )
-            yaxis_labels['yaxis%i' % row] = "pca multi<br>error"
-            row += 1
-
-        # plot pca singleview reprojection errors
-        if "big_df_pcasv" in locals():
-            for c, col in enumerate(cols):
-                pieces = col.split("_%s_" % coordinate)
-                assert len(pieces) == 2  # otherwise "_[x/y]_" appears in keypoint or model name :(
-                kp = pieces[0]
-                model = pieces[1]
-                fig_traces.add_trace(
-                    go.Scatter(
-                        name=col,
-                        x=np.arange(df_concat.shape[0]),
-                        y=big_df_pcasv[kp][big_df_pcasv.model_name == model],
-                        mode='lines',
-                        line=dict(color=colors[c]),
-                        showlegend=False,
-                    ),
-                    row=row, col=1
-                )
-            yaxis_labels['yaxis%i' % row] = "pca single<br>error"
-            row += 1
-
-        # plot traces
-        for coord in ["x", "y"]:
-            for c, col in enumerate(cols):
-                pieces = col.split("_%s_" % coordinate)
-                assert len(pieces) == 2  # otherwise "_[x/y]_" appears in keypoint or model name :(
-                kp = pieces[0]
-                model = pieces[1]
-                new_col = col.replace("_%s_" % coordinate, "_%s_" % coord)
-                fig_traces.add_trace(
-                    go.Scatter(
-                        name=model,
-                        x=np.arange(df_concat.shape[0]),
-                        y=df_concat[new_col],
-                        mode='lines',
-                        line=dict(color=colors[c]),
-                        showlegend=False if coord == "x" else True,
-                    ),
-                    row=row, col=1
-                )
-            yaxis_labels['yaxis%i' % row] = "%s coordinate" % coord
-            row += 1
-
-        # plot likelihoods
-        for c, col in enumerate(cols):
-            col_l = col.replace("_%s_" % coordinate, "_likelihood_")
-            fig_traces.add_trace(
-                go.Scatter(
-                    name=col_l,
-                    x=np.arange(df_concat.shape[0]),
-                    y=df_concat[col_l],
-                    mode='lines',
-                    line=dict(color=colors[c]),
-                    showlegend=False,
-                ),
-                row=row, col=1
-            )
-        yaxis_labels['yaxis%i' % row] = "confidence"
-        row += 1
-
-        for k, v in yaxis_labels.items():
-            fig_traces["layout"][k]["title"] = v
-        fig_traces.update_layout(
-            width=800, height=np.sum(row_heights) * 125,
-            title_text="Timeseries of %s" % keypoint
-        )
+        cols = get_col_names(keypoint, "x", models)
+        fig_traces = plot_traces(big_df, df_concat, cols)
         st.plotly_chart(fig_traces)
 
         # ---------------------------------------------------
-        # plot confidences
+        # generate report
         # ---------------------------------------------------
+        st.subheader("Generate diagnostic report")
 
-        st.header("Model confidence")
-        x_label = "Model Name"
-        y_label_conf = "Confidence"
+        # select save directory
+        run_date_time = datetime.today().strftime('%Y-%m-%d_%H-%M-%S')
+        # save_dir_default = os.path.join(os.getcwd(), run_date_time)
+        st.text("current directory: %s" % os.getcwd())
+        save_dir_ = st.text_input("Enter path of directory in which to save report")
+        save_dir = os.path.join(save_dir_, "litpose-report-video_%s" % run_date_time)
 
-        big_df_conf = compute_metric_per_dataset(
-            dfs=dframes, metric="confidence", keypoint_names=keypoint_names)
+        rpt_save_format = st.selectbox("Select figure format", ["pdf", "png"])
 
-        # plot diagnostic averaged overall all keypoints
-        plot_type_conf = st.selectbox(
-            "Select a plot type:", ["boxen", "box", "bar", "violin", "strip"], key="plot_type_conf")
-        plot_scale_conf = st.radio("Select y-axis scale", ["linear", "log"], key="plot_scale_conf")
-        log_y_conf = False if plot_scale_conf == "linear" else True
-        fig_cat_conf = make_seaborn_catplot(
-            x="model_name", y="mean", data=big_df_conf, log_y=log_y_conf, x_label=x_label,
-            y_label=y_label_conf, title="Average over all keypoints", plot_type=plot_type_conf)
-        st.pyplot(fig_cat_conf)
+        st.markdown("""
+            Click the `Generate Report` button below to automatically save out all plots. 
+            Each available metric will be plotted. Options plot type and y-axis scale
+            will be the same as those selected above. For each metric there will be one 
+            overview plot that shows metrics for each individual keypoint, as well as another plot
+            that shows the metric averaged across all keypoints.   
+        """)
 
-        # select keypoint to plot
-        keypoint_conf = st.selectbox(
-            "Select a keypoint:", pd.Series([*keypoint_names, "mean"]), key="keypoint_conf",
-        )
+        rpt_boxplot_type = plot_type
+        rpt_boxplot_scale = plot_scale
+        rpt_trace_models = models
 
-        # show boxplot per keypoint
-        fig_box_conf = make_plotly_catplot(
-            x="model_name", y=keypoint_conf, data=big_df_conf, x_label=x_label,
-            y_label=y_label_conf, title=keypoint_conf, plot_type="box")
-        st.plotly_chart(fig_box_conf)
+        # enumerate save options
+        savefig_kwargs = {}
 
-        # show histogram per keypoint
-        fig_hist_conf = make_plotly_catplot(
-            x=keypoint_conf, y=None, data=big_df_conf, x_label=y_label_conf,
-            y_label="Frame count", title=keypoint_conf, plot_type="hist"
-        )
-        st.plotly_chart(fig_hist_conf)
+        submit_report = st.button("Generate report")
+        if submit_report:
+            if "n_submits" not in st.session_state:
+                st.session_state["n_submits"] = 0
+            else:
+                st.session_state["n_submits"] = increase_submits(st.session_state["n_submits"])
+            generate_report_video(
+                df_traces=df_concat,
+                df_metrics=big_df,
+                keypoint_names=keypoint_names,
+                model_names=new_names,
+                save_dir=save_dir,
+                format=rpt_save_format,
+                box_kwargs={
+                    "plot_type": rpt_boxplot_type,
+                    "plot_scale": rpt_boxplot_scale,
+                },
+                trace_kwargs={
+                    "models": rpt_trace_models,
+                },
+                savefig_kwargs=savefig_kwargs,
+            )
+
+        if st.session_state["n_submits"] > 0:
+            msg = "Report directory located at<br>%s" % save_dir
+            st.markdown(
+                "<p style='font-family:sans-serif; color:Green;'>%s</p>" % msg,
+                unsafe_allow_html=True)
 
 
 if __name__ == "__main__":

@@ -17,6 +17,7 @@ from diagnostics.metrics import rmse
 from diagnostics.metrics import pca_reprojection_error_per_keypoint
 from diagnostics.visualizations import get_df_box as get_df_box_
 from diagnostics.visualizations import get_df_scatter as get_df_scatter_
+from diagnostics.visualizations import plot_traces as plot_traces_
 
 
 @st.cache(allow_output_mutation=True)

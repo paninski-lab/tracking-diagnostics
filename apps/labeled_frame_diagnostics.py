@@ -58,7 +58,8 @@ from diagnostics.streamlit import concat_dfs
 from diagnostics.streamlit import compute_metric_per_dataset
 from diagnostics.streamlit import update_single_file, update_file_list
 from diagnostics.visualizations import make_seaborn_catplot, get_y_label
-
+from diagnostics.visualizations import \
+    pix_error_key, conf_error_key, temp_norm_error_key, pcamv_error_key, pcasv_error_key
 
 # TODO
 # - refactor df making
@@ -114,11 +115,6 @@ def run():
 
     # col wrap when plotting results from all keypoints
     n_cols = 3
-
-    # metrics to plot
-    pix_error_key = "pixel error"
-    pcamv_error_key = "pca multiview"
-    pcasv_error_key = "pca singleview"
 
     metric_options = [pix_error_key]
 
@@ -344,7 +340,7 @@ def run():
         # save_dir_default = os.path.join(os.getcwd(), run_date_time)
         st.text("current directory: %s" % os.getcwd())
         save_dir_ = st.text_input("Enter path of directory in which to save report")
-        save_dir = os.path.join(save_dir_, "litpose_report_%s" % run_date_time)
+        save_dir = os.path.join(save_dir_, "litpose-report-labeled_%s" % run_date_time)
 
         rpt_save_format = st.selectbox("Select figure format", ["pdf", "png"])
 
@@ -418,7 +414,7 @@ def run():
             )
 
         if st.session_state["n_submits"] > 0:
-            msg = "Report directory located at %s" % save_dir
+            msg = "Report directory located at<br>%s" % save_dir
             st.markdown(
                 "<p style='font-family:sans-serif; color:Green;'>%s</p>" % msg,
                 unsafe_allow_html=True)
