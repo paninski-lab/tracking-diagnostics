@@ -1,15 +1,18 @@
 """Output a collection of plots that parallel those provided by the streamlit apps."""
 from typing import List
 
+from datetime import datetime
 import matplotlib.pyplot as plt
 import numpy as np
+from omegaconf import DictConfig
 import os
 import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
 import seaborn as sns
 import streamlit as st
-from typing import List, Dict, Tuple
+from typing import List, Dict, Tuple, Optional
+import yaml
 
 from lightning_pose.losses.losses import PCALoss
 from lightning_pose.utils.io import return_absolute_data_paths
@@ -20,11 +23,163 @@ from lightning_pose.utils.scripts import (
 from diagnostics.handler import ModelHandler
 from diagnostics.metrics import rmse
 from diagnostics.metrics import pca_reprojection_error_per_keypoint
-from diagnostics.visualizations import get_df_box, get_df_scatter
-from diagnostics.visualizations import get_y_label, make_seaborn_catplot
+from diagnostics.visualizations import get_y_label, make_seaborn_catplot, make_plotly_scatterplot
 from diagnostics.visualizations import plot_traces
-from diagnostics.visualizations import \
-    pix_error_key, conf_error_key, temp_norm_error_key, pcamv_error_key, pcasv_error_key
+
+
+pix_error_key = "pixel error"
+conf_error_key = "confidence"
+temp_norm_error_key = "temporal norm"
+pcamv_error_key = "pca multiview"
+pcasv_error_key = "pca singleview"
+
+
+class GenerateReport:
+    """Generate a report that includes plots and videos.
+
+    Examples
+    --------
+    reporter = GenerateReport(
+        prediction_files=["/path/to/preds0.csv", "/path/to/preds1.csv"],
+        model_names=["model_0", "model_1"],
+        cfg_file="/path/to/config.yaml",
+        label_file="/path/to/labels.csv",
+    )
+    reporter.generate_report(save_dir="/path/to/report_dir", format="pdf")
+
+    """
+
+    def __init__(
+            self,
+            prediction_files: list,
+            model_names: list,
+            cfg_file: Optional[str] = None,
+            label_file: Optional[str] = None,
+    ):
+        """
+
+        Parameters
+        ----------
+        prediction_files: list of absolute paths to prediction csv files (either frame or video)
+        model_names: list of corresponding model names
+        cfg: Lightning Pose config file
+        label_file: absolute path to labeled data
+
+        """
+        assert len(prediction_files) == len(model_names), \
+            "Must provide one model name for each prediction file"
+
+        # save inupts
+        self.prediction_files = prediction_files
+        self.model_names = model_names
+        self.cfg_file = cfg_file
+        self.label_file = label_file
+
+        self.cfg = None
+        self.is_video = True if label_file is None else False
+
+        # store data in dfs
+        self.dframe_gt = None  # labeled data
+        self.dframes = {}  # raw dataframes with predictions
+        self.df_concat = None  # concatenation that includes model names
+        self.df_metrics = None  # store computed metrics
+        self.keypoint_names = None
+
+        # process data
+        self._load_data_make_dfs()
+
+        self.df_metrics = build_metrics_df(
+            dframes=self.dframes, keypoint_names=self.keypoint_names, is_video=self.is_video,
+            cfg=self.cfg)
+        self.metric_options = list(self.df_metrics.keys())
+
+    def _load_data_make_dfs(self):
+
+        # load labels if present
+        if self.label_file is not None:
+            self.dframe_gt = pd.read_csv(self.label_file, header=[1, 2], index_col=0)
+
+        # load predictions, either labeled frames or videos
+        for model_name, prediction_file in zip(self.model_names, self.prediction_files):
+            self.dframes[model_name] = pd.read_csv(prediction_file, header=[1, 2], index_col=0)
+        self.df_concat, self.keypoint_names = concat_dfs(self.dframes)
+
+        # load config if present
+        if self.cfg_file is not None:
+            self.cfg = DictConfig(yaml.safe_load(open(self.cfg_file)))
+
+    def generate_report(
+            self,
+            save_dir: str,
+            format: str = "pdf",
+            box_kwargs: dict = {},
+            scatter_kwargs: dict = {},
+            trace_kwargs: dict = {},
+    ) -> str:
+        """
+
+        Parameters
+        ----------
+        save_dir: report will be saved in `save_dir/litpose-report-[video/labeled]_[date_time]`
+        format: pdf | png
+        box_kwargs: key-vals are
+            "plot_type": "boxen" | "box" | "bar" | "violin" | "strip"
+            "plot_scale": "log" | "linear"
+            "data_type" (labeled only): "train" | "validation" | "test" | "unused"
+        scatter_kwargs: key-vals are
+            "plot_scale": "log" | "linear"
+            "data_type" (labeled only): "train" | "validation" | "test" | "unused"
+            "model_0": <model_str>,
+            "model_1": <model_str>,
+        trace_kwargs: key-vals are
+            "model_names": list of model names as strs
+
+        Returns
+        -------
+        save directory
+
+        """
+
+        save_dir_full = self.generate_save_dir(save_dir, is_video=self.is_video)
+
+        if self.is_video:
+            if "model_names" not in trace_kwargs:
+                trace_kwargs["model_names"] = self.model_names
+            generate_report_video(
+                df_traces=self.df_concat,
+                df_metrics=self.df_metrics,
+                keypoint_names=self.keypoint_names,
+                save_dir=save_dir_full,
+                format=format,
+                box_kwargs=box_kwargs,
+                trace_kwargs=trace_kwargs,
+                savefig_kwargs={},
+            )
+        else:
+            if "model_0" not in scatter_kwargs:
+                scatter_kwargs["model_0"] = self.model_names[0]
+            if "model_1" not in scatter_kwargs:
+                scatter_kwargs["model_1"] = self.model_names[1]
+            generate_report_labeled(
+                df_metrics=self.df_metrics,
+                keypoint_names=self.keypoint_names,
+                model_names=self.model_names,
+                save_dir=save_dir_full,
+                format=format,
+                box_kwargs=box_kwargs,
+                scatter_kwargs=scatter_kwargs,
+                savefig_kwargs={},
+            )
+        return save_dir_full
+
+    @staticmethod
+    def generate_save_dir(base_save_dir: str, is_video: bool):
+        run_date_time = datetime.today().strftime('%Y-%m-%d_%H-%M-%S')
+        if is_video:
+            save_dir = os.path.join(base_save_dir, "litpose-report-video_%s" % run_date_time)
+        else:
+            save_dir = os.path.join(base_save_dir, "litpose-report-labeled_%s" % run_date_time)
+        return save_dir
 
 
 def update_kwargs_dict_with_defaults(kwargs_new, kwargs_default):
@@ -35,7 +190,7 @@ def update_kwargs_dict_with_defaults(kwargs_new, kwargs_default):
 
 
 def generate_report_labeled(
-        df,
+        df_metrics,
         keypoint_names,
         model_names,
         save_dir,
@@ -64,14 +219,14 @@ def generate_report_labeled(
     }
     scatter_kwargs = update_kwargs_dict_with_defaults(scatter_kwargs, scatter_kwargs_default)
 
-    metrics_to_plot = df.keys()
+    metrics_to_plot = df_metrics.keys()
 
     # ---------------------------------------------------
     # plot metrics for all models (catplot)
     # ---------------------------------------------------
     for metric_to_plot in metrics_to_plot:
 
-        df_filtered = df[metric_to_plot][df[metric_to_plot].set == box_kwargs["data_type"]]
+        df_filtered = df_metrics[metric_to_plot][df_metrics[metric_to_plot].set == box_kwargs["data_type"]]
         n_frames_per_dtype = df_filtered.shape[0] // len(df_filtered.model_name.unique())
 
         y_label = get_y_label(metric_to_plot)
@@ -91,8 +246,7 @@ def generate_report_labeled(
         fig_box.set(yscale=box_kwargs["plot_scale"])
         fig_box.fig.subplots_adjust(top=0.94)
         fig_box.fig.suptitle(title)
-        save_file = os.path.join(
-            save_dir, "labeled-diagnostics_barplot-all_%s.%s" % (metric_to_plot, format))
+        save_file = os.path.join(save_dir, "barplot-all_%s.%s" % (metric_to_plot, format))
         plt.savefig(save_file, dpi=300, format=format, **savefig_kwargs)
 
         # ---------------
@@ -104,8 +258,7 @@ def generate_report_labeled(
         make_seaborn_catplot(
             x="model_name", y=keypoint_to_plot, data=df_filtered, x_label="Model Name",
             y_label=y_label, title=title, log_y=log_y, plot_type=box_kwargs["plot_type"])
-        save_file = os.path.join(
-            save_dir, "labeled-diagnostics_barplot-mean_%s.%s" % (metric_to_plot, format))
+        save_file = os.path.join(save_dir, "barplot-mean_%s.%s" % (metric_to_plot, format))
         plt.savefig(save_file, dpi=300, format=format, **savefig_kwargs)
 
     # ---------------------------------------------------
@@ -116,14 +269,10 @@ def generate_report_labeled(
         model_0 = scatter_kwargs["model_0"]
         model_1 = scatter_kwargs["model_1"]
 
-        df_tmp0 = df[metric_to_plot][df[metric_to_plot].model_name == model_0]
-        df_tmp1 = df[metric_to_plot][df[metric_to_plot].model_name == model_1]
+        df_tmp0 = df_metrics[metric_to_plot][df_metrics[metric_to_plot].model_name == model_0]
+        df_tmp1 = df_metrics[metric_to_plot][df_metrics[metric_to_plot].model_name == model_1]
 
         y_label = get_y_label(metric_to_plot)
-        xlabel_ = "%s<br>(%s)" % (y_label, model_0)
-        ylabel_ = "%s<br>(%s)" % (y_label, model_1)
-
-        log_scatter = False if scatter_kwargs["plot_scale"] == "linear" else True
 
         # ---------------
         # plot ALL data
@@ -131,30 +280,15 @@ def generate_report_labeled(
         n_cols = 3
         df_scatter = get_df_scatter(
             df_tmp0, df_tmp1, scatter_kwargs["data_type"], [model_0, model_1], keypoint_names)
-        title = "All keypoints (%i %s frames)" % (n_frames_per_dtype, box_kwargs["data_type"])
-        fig_scatter = px.scatter(
-            df_scatter,
-            x=model_0, y=model_1,
-            facet_col="keypoint", facet_col_wrap=n_cols,
-            log_x=log_scatter, log_y=log_scatter,
-            opacity=0.5,
-            # hover_data=['img_file'],
-            # trendline="ols",
-            title=title,
-            labels={model_0: xlabel_, model_1: ylabel_},
+        title = "All keypoints (%i %s frames)" % (n_frames_per_dtype, scatter_kwargs["data_type"])
+        fig_scatter = make_plotly_scatterplot(
+            model_0=model_0, model_1=model_1, df=df_scatter,
+            metric_name=y_label, title=title,
+            axes_scale=scatter_kwargs["plot_scale"],
+            facet_col="keypoint", n_cols=n_cols,
+            fig_height=300 * np.ceil(len(keypoint_names) / n_cols), fig_width=900,
         )
-        fig_width = 900
-        fig_height = 300 * np.ceil(len(keypoint_names) / n_cols)
-        # clean up and save fig
-        mn = np.min(df_scatter[[model_0, model_1]].min(skipna=True).to_numpy())
-        mx = np.max(df_scatter[[model_0, model_1]].max(skipna=True).to_numpy())
-        trace = go.Scatter(x=[mn, mx], y=[mn, mx], line_color="black", mode="lines")
-        trace.update(legendgroup="trendline", showlegend=False)
-        fig_scatter.add_trace(trace, row="all", col="all", exclude_empty_subplots=True)
-        fig_scatter.update_layout(title=title, width=fig_width, height=fig_height)
-        fig_scatter.update_traces(marker={'size': 5})
-        save_file = os.path.join(
-            save_dir, "labeled-diagnostics_scatterplot-all_%s.%s" % (metric_to_plot, format))
+        save_file = os.path.join(save_dir, "scatterplot-all_%s.%s" % (metric_to_plot, format))
         fig_scatter.write_image(save_file)
 
         # ---------------
@@ -165,29 +299,13 @@ def generate_report_labeled(
             model_0: df_tmp0[keypoint_to_plot][df_tmp0.set == scatter_kwargs["data_type"]],
             model_1: df_tmp1[keypoint_to_plot][df_tmp1.set == scatter_kwargs["data_type"]],
         })
-        fig_scatter = px.scatter(
-            df_scatter,
-            x=model_0, y=model_1,
-            log_x=log_scatter,
-            log_y=log_scatter,
-            opacity=0.5,
-            # hover_data=['img_file'],
-            # trendline="ols",
-            title=title,
-            labels={model_0: xlabel_, model_1: ylabel_},
+        fig_scatter = make_plotly_scatterplot(
+            model_0=model_0, model_1=model_1, df=df_scatter,
+            metric_name=y_label, title=title,
+            axes_scale=scatter_kwargs["plot_scale"],
+            fig_height=500, fig_width=500,
         )
-        fig_width = 500
-        fig_height = 500
-        # clean up and save fig
-        mn = np.min(df_scatter[[model_0, model_1]].min(skipna=True).to_numpy())
-        mx = np.max(df_scatter[[model_0, model_1]].max(skipna=True).to_numpy())
-        trace = go.Scatter(x=[mn, mx], y=[mn, mx], line_color="black", mode="lines")
-        trace.update(legendgroup="trendline", showlegend=False)
-        fig_scatter.add_trace(trace, row="all", col="all", exclude_empty_subplots=True)
-        fig_scatter.update_layout(title=title, width=fig_width, height=fig_height)
-        fig_scatter.update_traces(marker={'size': 5})
-        save_file = os.path.join(
-            save_dir, "labeled-diagnostics_scatterplot-mean_%s.%s" % (metric_to_plot, format))
+        save_file = os.path.join(save_dir, "scatterplot-mean_%s.%s" % (metric_to_plot, format))
         fig_scatter.write_image(save_file)
 
 
@@ -195,7 +313,6 @@ def generate_report_video(
         df_traces,
         df_metrics,
         keypoint_names,
-        model_names,
         save_dir,
         format="pdf",
         box_kwargs={},
@@ -214,7 +331,7 @@ def generate_report_video(
     box_kwargs = update_kwargs_dict_with_defaults(box_kwargs, box_kwargs_default)
 
     trace_kwargs_default = {
-        "models": [],
+        "model_names": [],
     }
     trace_kwargs = update_kwargs_dict_with_defaults(trace_kwargs, trace_kwargs_default)
 
@@ -238,8 +355,7 @@ def generate_report_video(
             kind=box_kwargs["plot_type"]
         )
         fig_box.set(yscale=box_kwargs["plot_scale"])
-        save_file = os.path.join(
-            save_dir, "video-diagnostics_barplot-all_%s.%s" % (metric_to_plot, format))
+        save_file = os.path.join(save_dir, "barplot-all_%s.%s" % (metric_to_plot, format))
         plt.savefig(save_file, dpi=300, format=format, **savefig_kwargs)
 
         # ---------------
@@ -250,8 +366,7 @@ def generate_report_video(
             x="model_name", y="mean", data=df_metrics[metric_to_plot], log_y=log_y,
             x_label=x_label, y_label=y_label, title="Average over all keypoints",
             plot_type=box_kwargs["plot_type"])
-        save_file = os.path.join(
-            save_dir, "video-diagnostics_barplot-mean_%s.%s" % (metric_to_plot, format))
+        save_file = os.path.join(save_dir, "barplot-mean_%s.%s" % (metric_to_plot, format))
         plt.savefig(save_file, dpi=300, format=format, **savefig_kwargs)
 
     # ---------------------------------------------------
@@ -259,13 +374,76 @@ def generate_report_video(
     # ---------------------------------------------------
     for keypoint in keypoint_names:
 
-        cols = get_col_names(keypoint, "x", trace_kwargs["models"])
+        cols = get_col_names(keypoint, "x", trace_kwargs["model_names"])
         fig_traces = plot_traces(df_metrics, df_traces, cols)
-        save_file = os.path.join(
-            save_dir, "video-diagnostics_traces-%s.%s" % (keypoint, format))
+        save_file = os.path.join(save_dir, "traces-%s.%s" % (keypoint, format))
         fig_traces.write_image(save_file)
 
 
+# ----------------------------------------------
+# manipulate dataframes
+# ----------------------------------------------
+# @st.cache
+def concat_dfs(dframes: Dict[str, pd.DataFrame]) -> Tuple[pd.DataFrame, List[str]]:
+    counter = 0
+    for model_name, dframe in dframes.items():
+        if counter == 0:
+            df_concat = dframe.copy()
+            # base_colnames = list(df_concat.columns.levels[0])  # <-- sorts names, bad!
+            base_colnames = list([c[0] for c in df_concat.columns[1::3]])
+            df_concat = strip_cols_append_name(df_concat, model_name)
+        else:
+            df = strip_cols_append_name(dframe.copy(), model_name)
+            df_concat = pd.concat([df_concat, df], axis=1)
+        counter += 1
+    return df_concat, base_colnames
+
+
+@st.cache
+def get_df_box(df_orig, keypoint_names, model_names):
+    df_boxes = []
+    for keypoint in keypoint_names:
+        for model_curr in model_names:
+            tmp_dict = {
+                "keypoint": keypoint,
+                "metric": "Pixel error",
+                "value": df_orig[df_orig.model_name == model_curr][keypoint],
+                "model_name": model_curr,
+            }
+            df_boxes.append(pd.DataFrame(tmp_dict))
+    return pd.concat(df_boxes)
+
+
+@st.cache
+def get_df_scatter(df_0, df_1, data_type, model_names, keypoint_names):
+    df_scatters = []
+    for keypoint in keypoint_names:
+        df_scatters.append(pd.DataFrame({
+            "img_file": df_0.img_file[df_0.set == data_type],
+            "keypoint": keypoint,
+            model_names[0]: df_0[keypoint][df_0.set == data_type],
+            model_names[1]: df_1[keypoint][df_1.set == data_type],
+        }))
+    return pd.concat(df_scatters)
+
+
+def get_col_names(keypoint: str, coordinate: str, models: List[str]) -> List[str]:
+    return [get_full_name(keypoint, coordinate, model) for model in models]
+
+
+def strip_cols_append_name(df: pd.DataFrame, name: str) -> pd.DataFrame:
+    df.columns = ["_".join(col).strip() for col in df.columns.values]
+    df.columns = [col + "_" + name for col in df.columns.values]
+    return df
+
+
+def get_full_name(keypoint: str, coordinate: str, model: str) -> str:
+    return "_".join([keypoint, coordinate, model])
+
+
+# ----------------------------------------------
+# compute metrics
+# ----------------------------------------------
 @st.cache
 def build_metrics_df(dframes, keypoint_names, is_video, cfg=None, dframe_gt=None) -> dict:
 
@@ -474,33 +652,3 @@ def build_pca_loss_object(cfg):
     loss_factories = get_loss_factories(cfg=cfg, data_module=data_module)
     pca_loss = loss_factories["unsupervised"].loss_instance_dict[cfg.model.losses_to_use[0]]
     return pca_loss
-
-
-@st.cache
-def concat_dfs(dframes: Dict[str, pd.DataFrame]) -> Tuple[pd.DataFrame, List[str]]:
-    counter = 0
-    for model_name, dframe in dframes.items():
-        if counter == 0:
-            df_concat = dframe.copy()
-            # base_colnames = list(df_concat.columns.levels[0])  # <-- sorts names, bad!
-            base_colnames = list([c[0] for c in df_concat.columns[1::3]])
-            df_concat = strip_cols_append_name(df_concat, model_name)
-        else:
-            df = strip_cols_append_name(dframe.copy(), model_name)
-            df_concat = pd.concat([df_concat, df], axis=1)
-        counter += 1
-    return df_concat, base_colnames
-
-
-def get_col_names(keypoint: str, coordinate: str, models: List[str]) -> List[str]:
-    return [get_full_name(keypoint, coordinate, model) for model in models]
-
-
-def strip_cols_append_name(df: pd.DataFrame, name: str) -> pd.DataFrame:
-    df.columns = ["_".join(col).strip() for col in df.columns.values]
-    df.columns = [col + "_" + name for col in df.columns.values]
-    return df
-
-
-def get_full_name(keypoint: str, coordinate: str, model: str) -> str:
-    return "_".join([keypoint, coordinate, model])

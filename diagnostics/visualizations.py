@@ -2,13 +2,10 @@
 
 from matplotlib import pyplot as plt
 import numpy as np
-import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 import seaborn as sns
-import streamlit as st
-
 
 pix_error_key = "pixel error"
 conf_error_key = "confidence"
@@ -16,41 +13,6 @@ temp_norm_error_key = "temporal norm"
 pcamv_error_key = "pca multiview"
 pcasv_error_key = "pca singleview"
 
-
-# ---------------------------------------------------
-# PREPROCESSING
-# ---------------------------------------------------
-@st.cache
-def get_df_box(df_orig, keypoint_names, model_names):
-    df_boxes = []
-    for keypoint in keypoint_names:
-        for model_curr in model_names:
-            tmp_dict = {
-                "keypoint": keypoint,
-                "metric": "Pixel error",
-                "value": df_orig[df_orig.model_name == model_curr][keypoint],
-                "model_name": model_curr,
-            }
-            df_boxes.append(pd.DataFrame(tmp_dict))
-    return pd.concat(df_boxes)
-
-
-@st.cache
-def get_df_scatter(df_0, df_1, data_type, model_names, keypoint_names):
-    df_scatters = []
-    for keypoint in keypoint_names:
-        df_scatters.append(pd.DataFrame({
-            "img_file": df_0.img_file[df_0.set == data_type],
-            "keypoint": keypoint,
-            model_names[0]: df_0[keypoint][df_0.set == data_type],
-            model_names[1]: df_1[keypoint][df_1.set == data_type],
-        }))
-    return pd.concat(df_scatters)
-
-
-# ---------------------------------------------------
-# PLOTTING
-# ---------------------------------------------------
 
 def get_y_label(to_compute: str) -> str:
     if to_compute == 'rmse' or to_compute == "pixel_error" or to_compute == "pixel error":
@@ -106,6 +68,41 @@ def make_plotly_catplot(x, y, data, x_label, y_label, title, plot_type="box"):
     fig.update_layout(yaxis_title=y_label, xaxis_title=x_label, title=title)
 
     return fig
+
+
+def make_plotly_scatterplot(
+        model_0, model_1, df, metric_name, title,
+        axes_scale="linear",
+        facet_col=None, n_cols=0, opacity=0.5, hover_data=None,
+        fig_height=500, fig_width=500,
+):
+
+    xlabel = "%s<br>(%s)" % (metric_name, model_0)
+    ylabel = "%s<br>(%s)" % (metric_name, model_1)
+
+    log_scatter = False if axes_scale == "linear" else True
+
+    fig_scatter = px.scatter(
+        df,
+        x=model_0, y=model_1,
+        facet_col=facet_col, facet_col_wrap=n_cols,
+        log_x=log_scatter, log_y=log_scatter,
+        opacity=opacity,
+        hover_data=hover_data,
+        # trendline="ols",
+        title=title,
+        labels={model_0: xlabel, model_1: ylabel},
+    )
+
+    mn = np.min(df[[model_0, model_1]].min(skipna=True).to_numpy())
+    mx = np.max(df[[model_0, model_1]].max(skipna=True).to_numpy())
+    trace = go.Scatter(x=[mn, mx], y=[mn, mx], line_color="black", mode="lines")
+    trace.update(legendgroup="trendline", showlegend=False)
+    fig_scatter.add_trace(trace, row="all", col="all", exclude_empty_subplots=True)
+    fig_scatter.update_layout(title=title, width=fig_width, height=fig_height)
+    fig_scatter.update_traces(marker={'size': 5})
+
+    return fig_scatter
 
 
 def plot_traces(df_metrics, df_traces, cols):

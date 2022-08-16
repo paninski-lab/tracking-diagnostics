@@ -24,10 +24,14 @@ preceded by "--model_names":
 optionally, a data config file can be specified from the command line
 > streamlit run /path/to/video_diagnostics.py -- --data_cfg=/path/to/cfg.yaml
 
+Notes:
+    - this file should only contain the streamlit logic for the user interface
+    - data processing should come from (cached) functions imported from diagnsotics.reports
+    - plots should come from (non-cached) functions imported from diagnostics.visualizations
+
 """
 
 import argparse
-from datetime import datetime
 from omegaconf import DictConfig
 import os
 import pandas as pd
@@ -36,6 +40,7 @@ import streamlit as st
 import yaml
 
 from diagnostics.reports import build_metrics_df, concat_dfs, generate_report_video, get_col_names
+from diagnostics.reports import GenerateReport
 from diagnostics.streamlit_utils import update_single_file, update_file_list
 from diagnostics.visualizations import get_y_label
 from diagnostics.visualizations import make_seaborn_catplot, make_plotly_catplot, plot_traces
@@ -65,7 +70,7 @@ def run():
     uploaded_files, using_cli_preds = update_file_list(uploaded_files_, args.prediction_files)
 
     # metric_options = []
-    # big_df = {}
+    # df_metrics = {}
 
     if len(uploaded_files) > 0:  # otherwise don't try to proceed
 
@@ -93,7 +98,7 @@ def run():
             if not isinstance(uploaded_file, Path):
                 uploaded_file.seek(0)  # reset buffer after reading
 
-        # edit modelnames if desired, to simplify plotting
+        # edit model names if desired, to simplify plotting
         st.sidebar.write("Model display names (editable)")
         new_names = []
         og_names = list(dframes.keys())
@@ -125,9 +130,9 @@ def run():
         else:
             cfg = None
 
-        big_df = build_metrics_df(
+        df_metrics = build_metrics_df(
             dframes=dframes, keypoint_names=keypoint_names, is_video=True, cfg=cfg)
-        metric_options = list(big_df.keys())
+        metric_options = list(df_metrics.keys())
 
         # ---------------------------------------------------
         # plot diagnostics
@@ -144,7 +149,7 @@ def run():
         plot_scale = st.radio("Select y-axis scale", scale_options, key="plot_scale")
         log_y = False if plot_scale == "linear" else True
         fig_cat = make_seaborn_catplot(
-            x="model_name", y="mean", data=big_df[metric_to_plot], log_y=log_y, x_label=x_label,
+            x="model_name", y="mean", data=df_metrics[metric_to_plot], log_y=log_y, x_label=x_label,
             y_label=y_label, title="Average over all keypoints", plot_type=plot_type)
         st.pyplot(fig_cat)
 
@@ -154,12 +159,12 @@ def run():
         )
         # show boxplot per keypoint
         fig_box = make_plotly_catplot(
-            x="model_name", y=keypoint_to_plot, data=big_df[metric_to_plot], x_label=x_label,
+            x="model_name", y=keypoint_to_plot, data=df_metrics[metric_to_plot], x_label=x_label,
             y_label=y_label, title=keypoint_to_plot, plot_type="box")
         st.plotly_chart(fig_box)
         # show histogram per keypoint
         fig_hist = make_plotly_catplot(
-            x=keypoint_to_plot, y=None, data=big_df[metric_to_plot], x_label=y_label,
+            x=keypoint_to_plot, y=None, data=df_metrics[metric_to_plot], x_label=y_label,
             y_label="Frame count", title=keypoint_to_plot, plot_type="hist"
         )
         st.plotly_chart(fig_hist)
@@ -174,7 +179,7 @@ def run():
         )
         keypoint = st.selectbox("Select a keypoint:", pd.Series(keypoint_names))
         cols = get_col_names(keypoint, "x", models)
-        fig_traces = plot_traces(big_df, df_concat, cols)
+        fig_traces = plot_traces(df_metrics, df_concat, cols)
         st.plotly_chart(fig_traces)
 
         # ---------------------------------------------------
@@ -183,11 +188,9 @@ def run():
         st.subheader("Generate diagnostic report")
 
         # select save directory
-        run_date_time = datetime.today().strftime('%Y-%m-%d_%H-%M-%S')
-        # save_dir_default = os.path.join(os.getcwd(), run_date_time)
         st.text("current directory: %s" % os.getcwd())
         save_dir_ = st.text_input("Enter path of directory in which to save report")
-        save_dir = os.path.join(save_dir_, "litpose-report-video_%s" % run_date_time)
+        save_dir = GenerateReport.generate_save_dir(base_save_dir=save_dir_, is_video=True)
 
         rpt_save_format = st.selectbox("Select figure format", ["pdf", "png"])
 
@@ -215,9 +218,8 @@ def run():
                 st.session_state["n_submits"] = increase_submits(st.session_state["n_submits"])
             generate_report_video(
                 df_traces=df_concat,
-                df_metrics=big_df,
+                df_metrics=df_metrics,
                 keypoint_names=keypoint_names,
-                model_names=new_names,
                 save_dir=save_dir,
                 format=rpt_save_format,
                 box_kwargs={
@@ -225,7 +227,7 @@ def run():
                     "plot_scale": rpt_boxplot_scale,
                 },
                 trace_kwargs={
-                    "models": rpt_trace_models,
+                    "model_names": rpt_trace_models,
                 },
                 savefig_kwargs=savefig_kwargs,
             )
