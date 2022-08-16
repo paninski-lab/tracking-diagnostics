@@ -1,6 +1,7 @@
 """Output a collection of plots that parallel those provided by the streamlit apps."""
 from typing import List
 
+import cv2
 from datetime import datetime
 import matplotlib.pyplot as plt
 import numpy as np
@@ -23,6 +24,7 @@ from lightning_pose.utils.scripts import (
 from diagnostics.handler import ModelHandler
 from diagnostics.metrics import rmse
 from diagnostics.metrics import pca_reprojection_error_per_keypoint
+from diagnostics.video import make_labeled_video
 from diagnostics.visualizations import get_y_label, make_seaborn_catplot, make_plotly_scatterplot
 from diagnostics.visualizations import plot_traces
 
@@ -55,15 +57,23 @@ class GenerateReport:
             model_names: list,
             cfg_file: Optional[str] = None,
             label_file: Optional[str] = None,
+            video_file: Optional[str] = None,
     ):
         """
 
         Parameters
         ----------
-        prediction_files: list of absolute paths to prediction csv files (either frame or video)
-        model_names: list of corresponding model names
-        cfg: Lightning Pose config file
-        label_file: absolute path to labeled data
+        prediction_files
+            list of absolute paths to prediction csv files (either frame or video)
+        model_names
+            list of corresponding model names
+        cfg
+            Lightning Pose config file
+        label_file
+            absolute path to labeled data
+        video_file
+            absolute path to video file; if this is not None, a labeled video is created during
+            report generation
 
         """
         assert len(prediction_files) == len(model_names), \
@@ -74,6 +84,7 @@ class GenerateReport:
         self.model_names = model_names
         self.cfg_file = cfg_file
         self.label_file = label_file
+        self.video_file = video_file
 
         self.cfg = None
         self.is_video = True if label_file is None else False
@@ -115,24 +126,38 @@ class GenerateReport:
             box_kwargs: dict = {},
             scatter_kwargs: dict = {},
             trace_kwargs: dict = {},
+            video_kwargs: dict = {},
+            make_video_per_keypoint: bool = False,
     ) -> str:
         """
 
         Parameters
         ----------
-        save_dir: report will be saved in `save_dir/litpose-report-[video/labeled]_[date_time]`
-        format: pdf | png
-        box_kwargs: key-vals are
+        save_dir
+            report will be saved in `save_dir/litpose-report-[video/labeled]_[date_time]`
+        format
+            "pdf" | "png"
+        box_kwargs
             "plot_type": "boxen" | "box" | "bar" | "violin" | "strip"
             "plot_scale": "log" | "linear"
             "data_type" (labeled only): "train" | "validation" | "test" | "unused"
-        scatter_kwargs: key-vals are
+        scatter_kwargs
             "plot_scale": "log" | "linear"
             "data_type" (labeled only): "train" | "validation" | "test" | "unused"
             "model_0": <model_str>,
             "model_1": <model_str>,
-        trace_kwargs: key-vals are
+        trace_kwargs
             "model_names": list of model names as strs
+        video_kwargs
+            "likelihood_thresh": float
+            "max_frames": int
+            "markersize": int
+            "framerate": float
+            "height": float (inches)
+        make_video_per_keypoint
+            False will make a single video with all keypoints (if video_file was passed to
+            constructor). True will make the all-keypoint video as well as one video for each
+            keypoint.
 
         Returns
         -------
@@ -153,7 +178,10 @@ class GenerateReport:
                 format=format,
                 box_kwargs=box_kwargs,
                 trace_kwargs=trace_kwargs,
+                video_kwargs=video_kwargs,
                 savefig_kwargs={},
+                video_file=self.video_file,
+                make_video_per_keypoint=make_video_per_keypoint,
             )
         else:
             if "model_0" not in scatter_kwargs:
@@ -226,14 +254,13 @@ def generate_report_labeled(
     # ---------------------------------------------------
     for metric_to_plot in metrics_to_plot:
 
-        df_filtered = df_metrics[metric_to_plot][df_metrics[metric_to_plot].set == box_kwargs["data_type"]]
+        df_filtered = df_metrics[metric_to_plot][
+            df_metrics[metric_to_plot].set == box_kwargs["data_type"]]
         n_frames_per_dtype = df_filtered.shape[0] // len(df_filtered.model_name.unique())
 
         y_label = get_y_label(metric_to_plot)
 
-        # ---------------
         # plot ALL data
-        # ---------------
         n_cols = 3
         df_box = get_df_box(df_filtered, keypoint_names, model_names)
         sns.set_context("paper")
@@ -249,9 +276,7 @@ def generate_report_labeled(
         save_file = os.path.join(save_dir, "barplot-all_%s.%s" % (metric_to_plot, format))
         plt.savefig(save_file, dpi=300, format=format, **savefig_kwargs)
 
-        # ---------------
         # plot mean data
-        # ---------------
         keypoint_to_plot = "mean"
         title = 'Mean keypoints (%i %s frames)' % (n_frames_per_dtype, box_kwargs["data_type"])
         log_y = False if box_kwargs["plot_scale"] == "linear" else True
@@ -317,7 +342,10 @@ def generate_report_video(
         format="pdf",
         box_kwargs={},
         trace_kwargs={},
-        savefig_kwargs={}
+        savefig_kwargs={},
+        video_kwargs={},
+        video_file=None,
+        make_video_per_keypoint=False,
 ):
 
     if not os.path.exists(save_dir):
@@ -335,6 +363,15 @@ def generate_report_video(
     }
     trace_kwargs = update_kwargs_dict_with_defaults(trace_kwargs, trace_kwargs_default)
 
+    video_kwargs_default = {
+        "likelihood_thresh": 0.05,
+        "max_frames": 1000,
+        "markersize": 6,
+        "framerate": 20,
+        "height": 4,
+    }
+    video_kwargs = update_kwargs_dict_with_defaults(video_kwargs, video_kwargs_default)
+
     metrics_to_plot = df_metrics.keys()
 
     # ---------------------------------------------------
@@ -345,9 +382,7 @@ def generate_report_video(
         x_label = "Model Name"
         y_label = get_y_label(metric_to_plot)
 
-        # ---------------
         # plot ALL data
-        # ---------------
         df_tmp = df_metrics[metric_to_plot].melt(id_vars="model_name")
         df_tmp = df_tmp.rename(columns={"variable": "keypoint"})
         fig_box = sns.catplot(
@@ -358,9 +393,7 @@ def generate_report_video(
         save_file = os.path.join(save_dir, "barplot-all_%s.%s" % (metric_to_plot, format))
         plt.savefig(save_file, dpi=300, format=format, **savefig_kwargs)
 
-        # ---------------
         # plot mean data
-        # ---------------
         log_y = False if box_kwargs["plot_scale"] == "linear" else True
         make_seaborn_catplot(
             x="model_name", y="mean", data=df_metrics[metric_to_plot], log_y=log_y,
@@ -379,11 +412,43 @@ def generate_report_video(
         save_file = os.path.join(save_dir, "traces-%s.%s" % (keypoint, format))
         fig_traces.write_image(save_file)
 
+    # ---------------------------------------------------
+    # make labeled video(s)
+    # ---------------------------------------------------
+    if video_file is not None:
+
+        cap = cv2.VideoCapture(video_file)
+        video_name = os.path.splitext(os.path.basename(video_file))[0]
+
+        # extract x, y, likelihoods for each model
+        points = []
+        for model_name in trace_kwargs["model_names"]:
+            points_model = {}
+            for keypoint in keypoint_names:
+                tmp = []
+                for val in ["x", "y", "likelihood"]:
+                    tmp.append(
+                        df_traces[get_full_name(keypoint, val, model_name)].to_numpy()[:, None])
+                points_model[keypoint] = np.concatenate(tmp, axis=1)
+            points.append(points_model)
+
+        # make single video with all keypoints
+        save_file = os.path.join(save_dir, "%s_all.mp4" % video_name)
+        make_labeled_video(save_file, cap, points, trace_kwargs["model_names"], **video_kwargs)
+
+        # make individual video for each keypoint
+        if make_video_per_keypoint:
+            for keypoint in keypoint_names:
+                save_file = os.path.join(save_dir, "%s_%s.mp4" % (video_name, keypoint))
+                points_single = [{keypoint: points_tmp[keypoint]} for points_tmp in points]
+                make_labeled_video(
+                    save_file, cap, points_single, trace_kwargs["model_names"], **video_kwargs)
+
 
 # ----------------------------------------------
 # manipulate dataframes
 # ----------------------------------------------
-# @st.cache
+@st.cache
 def concat_dfs(dframes: Dict[str, pd.DataFrame]) -> Tuple[pd.DataFrame, List[str]]:
     counter = 0
     for model_name, dframe in dframes.items():
