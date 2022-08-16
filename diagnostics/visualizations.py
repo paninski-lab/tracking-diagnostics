@@ -7,6 +7,7 @@ import plotly.express as px
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 import seaborn as sns
+import streamlit as st
 
 
 pix_error_key = "pixel error"
@@ -19,6 +20,7 @@ pcasv_error_key = "pca singleview"
 # ---------------------------------------------------
 # PREPROCESSING
 # ---------------------------------------------------
+@st.cache
 def get_df_box(df_orig, keypoint_names, model_names):
     df_boxes = []
     for keypoint in keypoint_names:
@@ -33,6 +35,7 @@ def get_df_box(df_orig, keypoint_names, model_names):
     return pd.concat(df_boxes)
 
 
+@st.cache
 def get_df_scatter(df_0, df_1, data_type, model_names, keypoint_names):
     df_scatters = []
     for keypoint in keypoint_names:
@@ -84,6 +87,24 @@ def make_seaborn_catplot(
     ax.set_ylabel(y_label)
     fig.subplots_adjust(top=0.95)
     fig.suptitle(title)
+    return fig
+
+
+def make_plotly_catplot(x, y, data, x_label, y_label, title, plot_type="box"):
+    if plot_type == "box" or plot_type == "boxen":
+        fig = px.box(data, x=x, y=y)
+    elif plot_type == "violin":
+        fig = px.violin(big_df_filtered, x="model_name", y=keypoint_to_plot, log_y=log_y)
+    elif plot_type == "strip":
+        fig = px.strip(big_df_filtered, x="model_name", y=keypoint_to_plot, log_y=log_y)
+    elif plot_type == "bar":
+        fig = px.bar(big_df_filtered, x="model_name", y=keypoint_error, log_y=log_y)
+    elif plot_type == "hist":
+        fig = px.histogram(
+            data, x=x, color="model_name", marginal="rug", barmode="overlay",
+        )
+    fig.update_layout(yaxis_title=y_label, xaxis_title=x_label, title=title)
+
     return fig
 
 

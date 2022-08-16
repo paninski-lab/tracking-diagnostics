@@ -28,40 +28,17 @@ optionally, a data config file can be specified from the command line
 
 import argparse
 from datetime import datetime
-import numpy as np
 from omegaconf import DictConfig
 import os
 import pandas as pd
 from pathlib import Path
-import plotly.express as px
-import seaborn as sns
 import streamlit as st
-from typing import List, Dict, Tuple, Optional
 import yaml
 
-from diagnostics.reports import generate_report_video
-from diagnostics.streamlit import get_col_names
-from diagnostics.streamlit import concat_dfs
-from diagnostics.streamlit import compute_metric_per_dataset
-from diagnostics.streamlit import build_pca_loss_object
-from diagnostics.streamlit import update_single_file, update_file_list
-from diagnostics.visualizations import make_seaborn_catplot, get_y_label, plot_traces
-from diagnostics.visualizations import \
-    conf_error_key, temp_norm_error_key, pcamv_error_key, pcasv_error_key
-
-
-def make_plotly_catplot(x, y, data, x_label, y_label, title, plot_type="box"):
-
-    if plot_type == "box":
-        fig = px.box(data, x=x, y=y)
-        fig.update_layout(yaxis_title=y_label, xaxis_title=x_label, title=title)
-    elif plot_type == "hist":
-        fig = px.histogram(
-            data, x=x, color="model_name", marginal="rug", barmode="overlay",
-        )
-        fig.update_layout(yaxis_title=y_label, xaxis_title=x_label, title=title)
-
-    return fig
+from diagnostics.reports import build_metrics_df, concat_dfs, generate_report_video, get_col_names
+from diagnostics.streamlit_utils import update_single_file, update_file_list
+from diagnostics.visualizations import get_y_label
+from diagnostics.visualizations import make_seaborn_catplot, make_plotly_catplot, plot_traces
 
 
 def increase_submits(n_submits=0):
@@ -87,8 +64,8 @@ def run():
     # check to see if a prediction files were provided externally via cli arg
     uploaded_files, using_cli_preds = update_file_list(uploaded_files_, args.prediction_files)
 
-    metric_options = []
-    big_df = {}
+    # metric_options = []
+    # big_df = {}
 
     if len(uploaded_files) > 0:  # otherwise don't try to proceed
 
@@ -148,35 +125,9 @@ def run():
         else:
             cfg = None
 
-        # confidence
-        big_df[conf_error_key] = compute_metric_per_dataset(
-            dfs=dframes, metric="confidence", keypoint_names=keypoint_names)
-        metric_options += [conf_error_key]
-
-        # temporal norm
-        big_df[temp_norm_error_key] = compute_metric_per_dataset(
-            dfs=dframes, metric="temporal_norm", keypoint_names=keypoint_names)
-        metric_options += [temp_norm_error_key]
-
-        # pca multiview
-        if cfg is not None and cfg.data.get("mirrored_column_matches", None):
-            cfg_pcamv = cfg.copy()
-            cfg_pcamv.model.losses_to_use = ["pca_multiview"]
-            pcamv_loss = build_pca_loss_object(cfg_pcamv)
-            big_df[pcamv_error_key] = compute_metric_per_dataset(
-                dfs=dframes, metric="pca_mv", keypoint_names=keypoint_names, cfg=cfg_pcamv,
-                pca_loss=pcamv_loss)
-            metric_options += [pcamv_error_key]
-
-        # pca singleview
-        if cfg is not None and cfg.data.get("columns_for_singleview_pca", None):
-            cfg_pcasv = cfg.copy()
-            cfg_pcasv.model.losses_to_use = ["pca_singleview"]
-            pcasv_loss = build_pca_loss_object(cfg_pcasv)
-            big_df[pcasv_error_key] = compute_metric_per_dataset(
-                dfs=dframes, metric="pca_sv", keypoint_names=keypoint_names, cfg=cfg_pcasv,
-                pca_loss=pcasv_loss)
-            metric_options += [pcasv_error_key]
+        big_df = build_metrics_df(
+            dframes=dframes, keypoint_names=keypoint_names, is_video=True, cfg=cfg)
+        metric_options = list(big_df.keys())
 
         # ---------------------------------------------------
         # plot diagnostics
@@ -189,9 +140,8 @@ def run():
         y_label = get_y_label(metric_to_plot)
 
         # plot diagnostic averaged overall all keypoints
-        plot_type = st.selectbox(
-            "Select a plot type:", ["boxen", "box", "bar", "violin", "strip"], key="plot_type")
-        plot_scale = st.radio("Select y-axis scale", ["linear", "log"], key="plot_scale")
+        plot_type = st.selectbox("Select a plot type:", catplot_options, key="plot_type")
+        plot_scale = st.radio("Select y-axis scale", scale_options, key="plot_scale")
         log_y = False if plot_scale == "linear" else True
         fig_cat = make_seaborn_catplot(
             x="model_name", y="mean", data=big_df[metric_to_plot], log_y=log_y, x_label=x_label,
@@ -202,13 +152,11 @@ def run():
         keypoint_to_plot = st.selectbox(
             "Select a keypoint:", pd.Series([*keypoint_names, "mean"]), key="keypoint_to_plot",
         )
-
         # show boxplot per keypoint
         fig_box = make_plotly_catplot(
             x="model_name", y=keypoint_to_plot, data=big_df[metric_to_plot], x_label=x_label,
             y_label=y_label, title=keypoint_to_plot, plot_type="box")
         st.plotly_chart(fig_box)
-
         # show histogram per keypoint
         fig_hist = make_plotly_catplot(
             x=keypoint_to_plot, y=None, data=big_df[metric_to_plot], x_label=y_label,
@@ -216,24 +164,10 @@ def run():
         )
         st.plotly_chart(fig_hist)
 
-        # # print(big_df[metric_to_plot].head())
-        # df_tmp = big_df[metric_to_plot].melt(id_vars="model_name")
-        # # print(df_tmp.head())
-        # # print(df_tmp.columns)
-        # fig_cat2 = sns.catplot(data=df_tmp, x="model_name", y="value", col="variable", col_wrap=3)
-        # fig_cat2.set(yscale=plot_scale)
-        # st.pyplot(fig_cat2)
-
         # ---------------------------------------------------
         # plot traces
         # ---------------------------------------------------
-
         st.header("Trace diagnostics")
-
-        # display_head = st.checkbox("Display trace DataFrame")
-        # if display_head:
-        #     st.write("Concatenated Dataframe:")
-        #     st.write(df_concat.head())
 
         models = st.multiselect(
             "Select models:", pd.Series(list(dframes.keys())), default=list(dframes.keys())
@@ -274,6 +208,7 @@ def run():
 
         submit_report = st.button("Generate report")
         if submit_report:
+            st.warning("Generating report")
             if "n_submits" not in st.session_state:
                 st.session_state["n_submits"] = 0
             else:

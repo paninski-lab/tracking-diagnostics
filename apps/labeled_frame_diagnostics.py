@@ -45,25 +45,13 @@ import os
 from typing import List, Dict, Tuple, Optional
 import yaml
 
-from lightning_pose.losses.losses import PCALoss
-from lightning_pose.utils.io import return_absolute_data_paths
-from lightning_pose.utils.scripts import (
-    get_imgaug_transform, get_dataset, get_data_module, get_loss_factories,
-)
-
-from diagnostics.reports import generate_report_labeled
-from diagnostics.streamlit import get_df_box, get_df_scatter
-from diagnostics.streamlit import build_pca_loss_object
-from diagnostics.streamlit import concat_dfs
-from diagnostics.streamlit import compute_metric_per_dataset
-from diagnostics.streamlit import update_single_file, update_file_list
+from diagnostics.reports import concat_dfs, build_metrics_df, generate_report_labeled
+from diagnostics.streamlit_utils import update_single_file, update_file_list
+from diagnostics.visualizations import get_df_box, get_df_scatter
 from diagnostics.visualizations import make_seaborn_catplot, get_y_label
-from diagnostics.visualizations import \
-    pix_error_key, conf_error_key, temp_norm_error_key, pcamv_error_key, pcasv_error_key
 
 # TODO
 # - refactor df making
-# - save as pdf / eps
 # - show image on hover?
 
 
@@ -116,7 +104,7 @@ def run():
     # col wrap when plotting results from all keypoints
     n_cols = 3
 
-    metric_options = [pix_error_key]
+    # metric_options = [pix_error_key]
 
     if label_file is not None and len(prediction_files) > 0:  # otherwise don't try to proceed
 
@@ -186,25 +174,10 @@ def run():
         else:
             cfg = None
 
-        big_df = {}
-        big_df[pix_error_key] = compute_metric_per_dataset(
-            dfs=dframes, metric="rmse", keypoint_names=keypoint_names, labels=dframe_gt)
-        if cfg is not None and cfg.data.get("mirrored_column_matches", None):
-            cfg_pcamv = cfg.copy()
-            cfg_pcamv.model.losses_to_use = ["pca_multiview"]
-            pcamv_loss = build_pca_loss_object(cfg_pcamv)
-            big_df[pcamv_error_key] = compute_metric_per_dataset(
-                dfs=dframes, metric="pca_mv", keypoint_names=keypoint_names, cfg=cfg_pcamv,
-                pca_loss=pcamv_loss)
-            metric_options += [pcamv_error_key]
-        if cfg is not None and cfg.data.get("columns_for_singleview_pca", None):
-            cfg_pcasv = cfg.copy()
-            cfg_pcasv.model.losses_to_use = ["pca_singleview"]
-            pcasv_loss = build_pca_loss_object(cfg_pcasv)
-            big_df[pcasv_error_key] = compute_metric_per_dataset(
-                dfs=dframes, metric="pca_sv", keypoint_names=keypoint_names, cfg=cfg_pcasv,
-                pca_loss=pcasv_loss)
-            metric_options += [pcasv_error_key]
+        big_df = build_metrics_df(
+            dframes=dframes, keypoint_names=keypoint_names, is_video=False, cfg=cfg,
+            dframe_gt=dframe_gt)
+        metric_options = list(big_df.keys())
 
         # ---------------------------------------------------
         # user options
@@ -235,7 +208,6 @@ def run():
         # filter data
         big_df_filtered = big_df[metric_to_plot][big_df[metric_to_plot].set == data_type]
         n_frames_per_dtype = big_df_filtered.shape[0] // len(prediction_files)
-        # print(big_df[metric_to_plot].head())
 
         # plot data
         title = '%s (%i %s frames)' % (keypoint_to_plot, n_frames_per_dtype, data_type)
@@ -352,30 +324,6 @@ def run():
             that shows the metric averaged across all keypoints.        
             """)
 
-        # # enumerate plotting options (boxes)
-        # st.markdown("###### Multi-model (catplot) plotting options")
-        # rpt_boxplot_type = st.selectbox(
-        #     "Pick a plot type:", catplot_options, key="boxplot type report")
-        # rpt_boxplot_dtype = st.selectbox(
-        #     "Select data partition:", data_types, key="boxplot dtype report")
-        # rpt_boxplot_scale = st.radio(
-        #     "Select y-axis scale", scale_options, key="boxplot scale report")
-        #
-        # # enumerate plotting options (scatters)
-        # st.markdown("###### Two-model (scatterplot) plotting options")
-        # rpt_scatter_dtype = st.selectbox(
-        #     "Select data partition:", data_types, key="scatter dtype report")
-        # rpt_scatter_scale = st.radio(
-        #     "Select y-axis scale", scale_options, key="scatter scale report")
-        # if len(new_names) > 1:
-        #     idx_0 = int(np.where(np.array(new_names) == model_0)[0][0])
-        #     idx_1 = int(np.where(np.array(new_names) == model_1)[0][0])
-        # else:
-        #     idx_0 = 0
-        #     idx_1 = 0
-        # rpt_model_0 = st.selectbox("Model 0 (x-axis):", new_names, index=idx_0)
-        # rpt_model_1 = st.selectbox("Model 1 (y-axis):", new_names, index=idx_1)
-
         rpt_boxplot_type = plot_type
         rpt_boxplot_scale = plot_scale
         rpt_boxplot_dtype = data_type
@@ -389,6 +337,7 @@ def run():
 
         submit_report = st.button("Generate report")
         if submit_report:
+            st.warning("Generating report")
             if "n_submits" not in st.session_state:
                 st.session_state["n_submits"] = 0
             else:
