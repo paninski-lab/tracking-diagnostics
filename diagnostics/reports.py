@@ -36,7 +36,7 @@ pcamv_error_key = "pca multiview"
 pcasv_error_key = "pca singleview"
 
 
-class GenerateReport:
+class ReportGenerator:
     """Generate a report that includes plots and videos.
 
     Examples

@@ -41,7 +41,7 @@ import streamlit as st
 import yaml
 
 from diagnostics.reports import build_metrics_df, concat_dfs, generate_report_video, get_col_names
-from diagnostics.reports import GenerateReport
+from diagnostics.reports import ReportGenerator
 from diagnostics.streamlit_utils import update_single_file, update_file_list
 from diagnostics.visualizations import get_y_label
 from diagnostics.visualizations import make_seaborn_catplot, make_plotly_catplot, plot_traces
@@ -215,7 +215,7 @@ def run():
         # select save directory
         st.text("current directory: %s" % os.getcwd())
         save_dir_ = st.text_input("Enter path of directory in which to save report")
-        save_dir = GenerateReport.generate_save_dir(base_save_dir=save_dir_, is_video=True)
+        save_dir = ReportGenerator.generate_save_dir(base_save_dir=save_dir_, is_video=True)
 
         rpt_save_format = st.selectbox("Select figure format", ["pdf", "png"])
 

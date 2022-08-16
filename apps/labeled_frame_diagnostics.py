@@ -50,7 +50,7 @@ from typing import List, Dict, Tuple, Optional
 import yaml
 
 from diagnostics.reports import concat_dfs, build_metrics_df, get_df_box, get_df_scatter
-from diagnostics.reports import GenerateReport, generate_report_labeled
+from diagnostics.reports import ReportGenerator, generate_report_labeled
 from diagnostics.streamlit_utils import update_single_file, update_file_list
 from diagnostics.visualizations import make_seaborn_catplot, make_plotly_scatterplot, get_y_label
 
@@ -285,7 +285,7 @@ def run():
         # select save directory
         st.text("current directory: %s" % os.getcwd())
         save_dir_ = st.text_input("Enter path of directory in which to save report")
-        save_dir = GenerateReport.generate_save_dir(base_save_dir=save_dir_, is_video=False)
+        save_dir = ReportGenerator.generate_save_dir(base_save_dir=save_dir_, is_video=False)
 
         rpt_save_format = st.selectbox("Select figure format", ["pdf", "png"])
 
