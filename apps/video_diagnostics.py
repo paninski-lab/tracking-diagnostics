@@ -146,6 +146,8 @@ def run():
         video_file_ = None
         # check to see if a video file was provided externally via cli arg
         video_file = update_video_file(video_file_, args.video_file)
+        if isinstance(video_file, Path):
+            video_file = str(video_file)
 
         # ---------------------------------------------------
         # compute metrics
