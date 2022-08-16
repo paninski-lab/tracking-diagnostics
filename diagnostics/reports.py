@@ -41,13 +41,17 @@ class GenerateReport:
 
     Examples
     --------
+    # Note: this class cannot be imported into a notebook, it must be run in a script
+
+    # initialize object for labeled frames
     reporter = GenerateReport(
         prediction_files=["/path/to/preds0.csv", "/path/to/preds1.csv"],
         model_names=["model_0", "model_1"],
         cfg_file="/path/to/config.yaml",
         label_file="/path/to/labels.csv",
     )
-    reporter.generate_report(save_dir="/path/to/report_dir", format="pdf")
+    # create report
+    report_dir = reporter.generate_report(save_dir="/path/to/report_dir", format="pdf")
 
     """
 

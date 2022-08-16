@@ -32,6 +32,7 @@ Notes:
 """
 
 import argparse
+import cv2
 from omegaconf import DictConfig
 import os
 import pandas as pd
@@ -44,6 +45,18 @@ from diagnostics.reports import GenerateReport
 from diagnostics.streamlit_utils import update_single_file, update_file_list
 from diagnostics.visualizations import get_y_label
 from diagnostics.visualizations import make_seaborn_catplot, make_plotly_catplot, plot_traces
+
+
+@st.cache(allow_output_mutation=True)
+def update_video_file(curr_file, new_file_list):
+    """Cannot use `update_single_file` for both or there will be cache collisons."""
+    if curr_file is None and len(new_file_list) > 0:
+        # pull file from cli args; wrap in Path so that it looks like an UploadedFile object
+        # returned by streamlit's file_uploader
+        ret_file = Path(new_file_list[0])
+    else:
+        ret_file = curr_file
+    return ret_file
 
 
 def increase_submits(n_submits=0):
@@ -68,9 +81,6 @@ def run():
     )
     # check to see if a prediction files were provided externally via cli arg
     uploaded_files, using_cli_preds = update_file_list(uploaded_files_, args.prediction_files)
-
-    # metric_options = []
-    # df_metrics = {}
 
     if len(uploaded_files) > 0:  # otherwise don't try to proceed
 
@@ -110,12 +120,7 @@ def run():
         for n_name, o_name in zip(new_names, og_names):
             dframes[n_name] = dframes.pop(o_name)
 
-        # concat dataframes, collapsing hierarchy and making df fatter.
-        df_concat, keypoint_names = concat_dfs(dframes)
-
-        # ---------------------------------------------------
-        # compute metrics
-        # ---------------------------------------------------
+        # upload config file
         uploaded_cfg_: str = st.sidebar.file_uploader(
             "Select data config yaml (optional, for pca losses)", accept_multiple_files=False,
             type=["yaml", "yml"],
@@ -130,6 +135,24 @@ def run():
         else:
             cfg = None
 
+        # upload video file
+        # video_file_: str = st.sidebar.file_uploader(
+        #     "Choose video file corresponding to predictions (optional, for labeled video)",
+        #     accept_multiple_files=False,
+        #     type="mp4",
+        # )
+        # TODO: cannot currently upload video from file explorer, doesn't return filepath
+        # opencv VideoCapture cannot read a relative path or a BytesIO object
+        video_file_ = None
+        # check to see if a video file was provided externally via cli arg
+        video_file = update_video_file(video_file_, args.video_file)
+
+        # ---------------------------------------------------
+        # compute metrics
+        # ---------------------------------------------------
+
+        # concat dataframes, collapsing hierarchy and making df fatter.
+        df_concat, keypoint_names = concat_dfs(dframes)
         df_metrics = build_metrics_df(
             dframes=dframes, keypoint_names=keypoint_names, is_video=True, cfg=cfg)
         metric_options = list(df_metrics.keys())
@@ -194,13 +217,29 @@ def run():
 
         rpt_save_format = st.selectbox("Select figure format", ["pdf", "png"])
 
+        rpt_n_frames = 500
+        rpt_likelihood = 0.05
+        rpt_framerate = 20
+        rpt_single_vids = False
+        if video_file is not None:
+            rpt_n_frames = st.text_input("Number of frames in labeled video (<1000)", rpt_n_frames)
+            rpt_likelihood = st.text_input("Likelihood threshold", rpt_likelihood)
+            rpt_framerate = st.text_input("Labeled video framerate", rpt_framerate)
+            rpt_single_vids = st.checkbox(
+                "Output video for each individual bodypart", rpt_single_vids)
+
         st.markdown("""
             Click the `Generate Report` button below to automatically save out all plots. 
             Each available metric will be plotted. Options plot type and y-axis scale
             will be the same as those selected above. For each metric there will be one 
             overview plot that shows metrics for each individual keypoint, as well as another plot
             that shows the metric averaged across all keypoints.   
+            
+            **Note**: pca metrics will be computed and plotted when you upload a config yaml in the 
+            left panel
         """)
+        # * a labeled video will be created (using the same models whose traces are plotted
+        # above) when you upload the video file in the left panel
 
         rpt_boxplot_type = plot_type
         rpt_boxplot_scale = plot_scale
@@ -209,7 +248,8 @@ def run():
         # enumerate save options
         savefig_kwargs = {}
 
-        submit_report = st.button("Generate report")
+        disable_button = True if save_dir_ is None or save_dir_ == "" else False
+        submit_report = st.button("Generate report", disabled=disable_button)
         if submit_report:
             st.warning("Generating report")
             if "n_submits" not in st.session_state:
@@ -230,6 +270,13 @@ def run():
                     "model_names": rpt_trace_models,
                 },
                 savefig_kwargs=savefig_kwargs,
+                video_kwargs={
+                    "likelihood_thresh": float(rpt_likelihood),
+                    "max_frames": int(rpt_n_frames),
+                    "framerate": float(rpt_framerate),
+                },
+                video_file=video_file,
+                make_video_per_keypoint=rpt_single_vids,
             )
 
         if st.session_state["n_submits"] > 0:
@@ -246,5 +293,6 @@ if __name__ == "__main__":
     parser.add_argument('--prediction_files', action='append', default=[])
     parser.add_argument('--model_names', action='append', default=[])
     parser.add_argument('--data_cfg', action='append', default=[])
+    parser.add_argument('--video_file', action='append', default=[])
 
     run()

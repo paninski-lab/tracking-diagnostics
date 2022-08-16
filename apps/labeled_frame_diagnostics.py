@@ -90,7 +90,7 @@ def run():
     st.sidebar.header("Data Settings")
 
     # select ground truth label file from file system
-    label_file_: list = st.sidebar.file_uploader(
+    label_file_: str = st.sidebar.file_uploader(
         "Choose CSV file with labeled data", accept_multiple_files=False, type="csv",
     )
     # check to see if a label file was provided externally via cli arg
@@ -108,8 +108,6 @@ def run():
     # col wrap when plotting results from all keypoints
     n_cols = 3
 
-    # metric_options = [pix_error_key]
-
     if label_file is not None and len(prediction_files) > 0:  # otherwise don't try to proceed
 
         # ---------------------------------------------------
@@ -117,7 +115,6 @@ def run():
         # ---------------------------------------------------
 
         # read dataframes into a dict with keys=filenames
-        # dframe_gt = load_df(label_file, header=[1, 2], index_col=0)
         dframe_gt = pd.read_csv(label_file, header=[1, 2], index_col=0)
         if not isinstance(label_file, Path):
             label_file.seek(0)  # reset buffer after reading
@@ -155,13 +152,7 @@ def run():
         for n_name, o_name in zip(new_names, og_names):
             dframes[n_name] = dframes.pop(o_name)
 
-        # concat dataframes, collapsing hierarchy and making df fatter.
-        df_concat, keypoint_names = concat_dfs(dframes)
-
-        # ---------------------------------------------------
-        # compute metrics
-        # ---------------------------------------------------
-
+        # upload config file
         uploaded_cfg_: str = st.sidebar.file_uploader(
             "Select data config yaml (optional, for pca losses)", accept_multiple_files=False,
             type=["yaml", "yml"]
@@ -176,6 +167,12 @@ def run():
         else:
             cfg = None
 
+        # ---------------------------------------------------
+        # compute metrics
+        # ---------------------------------------------------
+
+        # concat dataframes, collapsing hierarchy and making df fatter.
+        df_concat, keypoint_names = concat_dfs(dframes)
         df_metrics = build_metrics_df(
             dframes=dframes, keypoint_names=keypoint_names, is_video=False, cfg=cfg,
             dframe_gt=dframe_gt)
@@ -298,7 +295,10 @@ def run():
             etc. will be the same as those selected above. For each metric there will be one 
             overview plot that shows metrics for each individual keypoint, as well as another plot
             that shows the metric averaged across all keypoints.        
-            """)
+        
+            **Note**: pca metrics will be computed and plotted when you upload a config yaml in the 
+            left panel
+        """)
 
         rpt_boxplot_type = plot_type
         rpt_boxplot_scale = plot_scale
@@ -311,7 +311,8 @@ def run():
         # enumerate save options
         savefig_kwargs = {}
 
-        submit_report = st.button("Generate report")
+        disable_button = True if save_dir_ is None or save_dir_ == "" else False
+        submit_report = st.button("Generate report", disabled=disable_button)
         if submit_report:
             st.warning("Generating report")
             if "n_submits" not in st.session_state:
