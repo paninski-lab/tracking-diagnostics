@@ -222,7 +222,11 @@ def run():
                 kind=plot_type, data=df_box, height=2)
             fig_box.set_axis_labels("Model Name", y_label)
             fig_box.set_xticklabels(rotation=45, ha="right")
-            fig_box.fig.subplots_adjust(top=0.94)
+            if len(keypoint_names) > 9:
+                top = 0.94
+            else:
+                top = 0.9
+            fig_box.fig.subplots_adjust(top=top)
             fig_box.fig.suptitle("All keypoints (%i %s frames)" % (n_frames_per_dtype, data_type))
             st.pyplot(fig_box)
 
