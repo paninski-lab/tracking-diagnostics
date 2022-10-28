@@ -1,5 +1,6 @@
 """Model handler that loads models and computes metrics on videos/csv files."""
 
+import copy
 import os
 import pandas as pd
 import torch
@@ -34,6 +35,9 @@ class ModelHandler(object):
         if len(version) == 0:
             raise FileNotFoundError("Did not find requested model in %s" % base_dir)
         self.model_dir = version[0]
+        # make sure we don't turn on data augmentation
+        cfg = copy.deepcopy(cfg)
+        cfg.training.imgaug = "default"
         self.cfg = cfg
         self.pred_df = None
         self.last_computed_metric = None
