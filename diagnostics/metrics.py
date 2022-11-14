@@ -5,79 +5,6 @@ from sklearn.metrics import precision_score, recall_score
 import torch
 from typing import Optional
 
-from lightning_pose.utils.pca import compute_pca_reprojection_error
-
-
-def pca_reprojection_error_per_keypoint(
-    pca_loss_object, keypoints_pred, device: Optional[str] = None
-):
-    """Compute error between data and its reprojection from a low-d representation."""
-    if device is None:
-        device = pca_loss_object.pca.device
-    if not isinstance(keypoints_pred, torch.Tensor):
-        keypoints_pred = torch.tensor(
-            keypoints_pred, device=device, dtype=torch.float32
-        )
-    # TODO: check that the compute_loss function calls the right metric post hoc.
-    # print(keypoints_pred.shape)
-    keypoints_pred = pca_loss_object.pca._format_data(data_arr=keypoints_pred)
-    # print(keypoints_pred.shape)
-    elementwise_loss = pca_loss_object.compute_loss(predictions=keypoints_pred)
-    # print(elementwise_loss.shape)
-    return elementwise_loss.cpu().numpy()
-
-
-def pca_reprojection_error(keypoints_pred, mean, kept_eigenvectors, device="cpu"):
-    """Error between data and it's reprojection from a low-d representation.
-
-    Args:
-        keypoints_pred: np.ndarray or torch.Tensor, shape (samples, observation_dim)
-        mean: np.ndarray or torch.Tensor, shape (observation_dim,)
-        kept_eigenvectors: np.ndarray or torch.Tensor, shape
-            (latent_dim, observation_dim)
-        device: "cpu" | "cuda"
-
-    Returns:
-        np.ndarray, shape (samples, n_keypoints)
-
-    """
-
-    if not isinstance(keypoints_pred, torch.Tensor):
-        keypoints_pred = torch.tensor(
-            keypoints_pred, device=device, dtype=torch.float32
-        )
-    if not isinstance(mean, torch.Tensor):
-        mean = torch.tensor(mean, device=device, dtype=torch.float32)
-    if not isinstance(kept_eigenvectors, torch.Tensor):
-        kept_eigenvectors = torch.tensor(
-            kept_eigenvectors, device=device, dtype=torch.float32
-        )
-
-    results = compute_pca_reprojection_error(
-        clean_pca_arr=keypoints_pred,
-        kept_eigenvectors=kept_eigenvectors,
-        mean=mean,
-    )
-
-    return results.numpy()
-
-
-def rmse(keypoints_true, keypoints_pred):
-    """Root mean square error between true and predicted keypoints.
-
-    Args:
-        keypoints_true: np.ndarray, shape (samples, n_keypoints, 2)
-        keypoints_pred: np.ndarray, shape (samples, n_keypoints, 2)
-
-    Returns:
-        np.ndarray, shape (samples, n_keypoints)
-
-    """
-    pixel_error = np.linalg.norm(keypoints_true - keypoints_pred, axis=2)
-    return pixel_error
-    # mse = np.square(keypoints_true - keypoints_pred)
-    # return np.sqrt(0.5 * (mse[:, :, 0] + mse[:, :, 1]))
-
 
 def average_precision(
         keypoints_true, keypoints_pred, scale, kappa, thresh=np.arange(0.5, 1.0, 0.05)):
@@ -201,33 +128,6 @@ def unimodal_mse(heatmaps_pred, img_height, img_width, downsample_factor):
     ).numpy()
 
     return np.mean(results, axis=(2, 3))
-
-
-def temporal_norm(keypoints_pred):
-    """Norm of difference between keypoints on successive time bins.
-
-    Args:
-        keypoints_pred: np.ndarray or torch.Tensor, shape
-            (samples, n_keypoints * 2) or (samples, n_keypoints, 2)
-
-    Returns:
-        np.ndarray, shape (samples - 1, n_keypoints)
-
-    """
-
-    from lightning_pose.losses.losses import TemporalLoss
-
-    t_loss = TemporalLoss()
-
-    if not isinstance(keypoints_pred, torch.Tensor):
-        keypoints_pred = torch.tensor(
-            keypoints_pred, device=t_loss.device, dtype=torch.float32
-        )
-
-    if len(keypoints_pred.shape) != 2:
-        keypoints_pred = keypoints_pred.reshape(keypoints_pred.shape[0], -1)
-
-    return t_loss.compute_loss(keypoints_pred).numpy()
 
 
 # --------------------------------------------------------------------------------------

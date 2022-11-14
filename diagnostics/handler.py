@@ -6,20 +6,19 @@ import pandas as pd
 import torch
 import h5py
 import numpy as np
-from zmq import device
+
+from lightning_pose.metrics import (
+    pixel_error,
+    temporal_norm,
+    pca_singleview_reprojection_error,
+    pca_multiview_reprojection_error,
+)
 
 from diagnostics.io import find_model_versions
 from diagnostics.metrics import (
-    pca_reprojection_error_per_keypoint,
-    rmse,
     OKS,
     average_precision,
-    temporal_norm,
     unimodal_mse,
-)
-
-from lightning_pose.utils.pca import (
-    format_multiview_data_for_pca,
 )
 
 
@@ -60,7 +59,7 @@ class ModelHandler(object):
         Args:
             metric:
                 labeled data only:
-                    "rmse": root mean square error between true and pred keypoints
+                    "rmse"/"pixel_error": root mean square error between true and pred keypoints
                     "oks": object keypoint similarity
                     "average_precision": returns a value *per keypoint*, not per sample/keypoint
                 unlabeled data only:
@@ -77,13 +76,13 @@ class ModelHandler(object):
             confidence_thresh : float
                 set results to nan if model confidence is below this threshold
             **kwargs: the following are required for the indicated loss:
-                "rmse":
+                "rmse" or "pixel_error":
                     keypoints_true: np.ndarray
                 "oks":
                     scale: float
                     kappa: np.ndarray of shape (n_keypoints,)
                 "temporal_norm":
-                "pca_reproj":
+                "pca_multiview"/"pca_singleview":
                     pca_loss_obj: lightning_pose.utils.pca.KeypointPCA object
                 "unimodal_mse":
                     heatmap_file: absolute path to heatmap h5 file; if not present, the
@@ -175,56 +174,31 @@ class ModelHandler(object):
         check_kwargs(kwargs, metric, is_video)
 
         # compute metric
-        if metric == "rmse":
-            results = rmse(kwargs["keypoints_true"], keypoints_pred)
+        if metric == "rmse" or metric == "pixel_error":
+            results = pixel_error(kwargs["keypoints_true"], keypoints_pred)
 
         elif metric == "oks":
             results = OKS(
                 kwargs["keypoints_true"], keypoints_pred, kwargs["scale"], kwargs["kappa"])
 
-        # elif metric == "average_precision":
-        #     results = average_precision(
-        #         kwargs["keypoints_true"], keypoints_pred, kwargs["scale"], kwargs["kappa"],
-        #         kwargs.get("thresh", np.arange(0.5, 1.0, 0.05)))
+        elif metric == "average_precision":
+            results = average_precision(
+                kwargs["keypoints_true"], keypoints_pred, kwargs["scale"], kwargs["kappa"],
+                kwargs.get("thresh", np.arange(0.5, 1.0, 0.05)))
 
         elif metric == "pca_singleview" or metric == "pca_multiview":
+            results = pca_singleview_reprojection_error(
+                keypoints_pred=keypoints_pred,
+                pca=kwargs["pca_loss_obj"].pca,
+                cfg=self.cfg,
+            )
 
-            # resize back to smaller training dims.
-            # TODO: be careful, that'll reshape all the keypoints going forward
-            keypoints_pred = self.resize_keypoints(self.cfg, keypoints_pred=keypoints_pred)
-            original_dims = keypoints_pred.shape
-
-            if metric == "pca_multiview":
-
-                mirrored_column_matches = kwargs["pca_loss_obj"].pca.mirrored_column_matches
-                # adding a reshaping below since the loss class expects a single last dim with
-                # num_keypoints*2
-                results_raw = pca_reprojection_error_per_keypoint(
-                    kwargs["pca_loss_obj"],
-                    keypoints_pred=keypoints_pred.reshape(keypoints_pred.shape[0], -1))
-                results_raw = results_raw.reshape(
-                    -1,
-                    len(mirrored_column_matches[0]),
-                    len(mirrored_column_matches),
-                )  # batch X num_used_keypoints X num_views
-
-                # next, put this back into a full keypoints pred arr
-                results = np.nan * np.zeros((original_dims[0], original_dims[1]))
-                for c, cols in enumerate(mirrored_column_matches):
-                    results[:, cols] = results_raw[
-                        :, :, c
-                    ]  # just the columns belonging to view c
-
-            elif metric == "pca_singleview":
-
-                pca_cols = kwargs["pca_loss_obj"].pca.columns_for_singleview_pca
-                results_ = pca_reprojection_error_per_keypoint(
-                    kwargs["pca_loss_obj"],
-                    keypoints_pred=keypoints_pred.reshape(keypoints_pred.shape[0], -1))
-
-                # next, put this back into a full keypoints pred arr
-                results = np.nan * np.zeros((original_dims[0], original_dims[1]))
-                results[:, pca_cols] = results_
+        elif metric == "pca_multiview":
+            results = pca_multiview_reprojection_error(
+                keypoints_pred=keypoints_pred,
+                pca=kwargs["pca_loss_obj"].pca,
+                cfg=self.cfg,
+            )
 
         elif metric == "unimodal_mse":
             if "heatmap_file" not in kwargs.keys() or kwargs["heatmap_file"] is None:
@@ -251,8 +225,6 @@ class ModelHandler(object):
 
         elif metric == "temporal_norm":
             results = temporal_norm(keypoints_pred)
-            # add nans into first row
-            results = np.vstack([np.nan * np.zeros((1, results.shape[1])), results])
 
         else:
             raise NotImplementedError
@@ -304,6 +276,4 @@ def check_kwargs(kwargs, metric, is_video):
 
     for req_kwarg in req_kwargs:
         if req_kwarg not in kwargs.keys():
-            raise ValueError(
-                "Must include %s in kwargs for %s computation" % (req_kwarg, metric)
-            )
+            raise ValueError("Must include %s in kwargs for %s computation" % (req_kwarg, metric))

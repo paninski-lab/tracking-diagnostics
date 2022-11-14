@@ -141,7 +141,7 @@ def make_labeled_video_wrapper(
         markersize: int = 6,
         framerate: float = 20,
         height: float = 4
-    ):
+):
     """
 
     Parameters

@@ -40,8 +40,8 @@ from pathlib import Path
 import streamlit as st
 import yaml
 
-from diagnostics.reports import build_metrics_df, concat_dfs, generate_report_video, get_col_names
-from diagnostics.reports import ReportGenerator
+from diagnostics.reports import build_metrics_df, concat_dfs, get_col_names
+from diagnostics.reports import ReportGenerator, generate_report_video
 from diagnostics.streamlit_utils import update_single_file, update_file_list
 from diagnostics.visualizations import get_y_label
 from diagnostics.visualizations import make_seaborn_catplot, make_plotly_catplot, plot_traces

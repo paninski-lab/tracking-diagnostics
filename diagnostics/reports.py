@@ -16,14 +16,14 @@ from typing import List, Dict, Tuple, Optional
 import yaml
 
 from lightning_pose.losses.losses import PCALoss
+from lightning_pose.metrics import (
+    pixel_error, pca_singleview_reprojection_error, pca_multiview_reprojection_error,
+)
 from lightning_pose.utils.io import return_absolute_data_paths
 from lightning_pose.utils.scripts import (
     get_imgaug_transform, get_dataset, get_data_module, get_loss_factories,
 )
 
-from diagnostics.handler import ModelHandler
-from diagnostics.metrics import rmse
-from diagnostics.metrics import pca_reprojection_error_per_keypoint
 from diagnostics.video import make_labeled_video
 from diagnostics.visualizations import get_y_label, make_seaborn_catplot, make_plotly_scatterplot
 from diagnostics.visualizations import plot_traces
@@ -530,7 +530,7 @@ def build_metrics_df(dframes, keypoint_names, is_video, cfg=None, dframe_gt=None
         # pixel error
         if dframe_gt is not None:
             df_metrics[pix_error_key] = compute_metric_per_dataset(
-                dfs=dframes, metric="rmse", keypoint_names=keypoint_names, labels=dframe_gt)
+                dfs=dframes, metric="pixel_error", keypoint_names=keypoint_names, labels=dframe_gt)
 
     # pca multiview
     if cfg is not None and cfg.data.get("mirrored_column_matches", None):
@@ -564,7 +564,7 @@ def compute_metric_per_dataset(
     # concat_df = pd.DataFrame(columns=colnames)
     concat_dfs = []
     for model_name, df in dfs.items():
-        if metric == "rmse":
+        if metric == "pixel_error":
             df_ = compute_pixel_error(df, keypoint_names, model_name, **kwargs)
         elif metric == "temporal_norm":
             df_ = compute_temporal_norms(df, keypoint_names, model_name, **kwargs)
@@ -595,7 +595,7 @@ def compute_pixel_error(
 
     set = df.iloc[:, -1].to_numpy()
 
-    results = rmse(keypoints_true, keypoints_pred)
+    results = pixel_error(keypoints_true, keypoints_pred)
 
     # collect results
     df_ = pd.DataFrame(columns=keypoint_names)
@@ -658,7 +658,6 @@ def compute_pca_reprojection_error(
     df: pd.DataFrame, keypoint_names: List[str], model_name: str, cfg: dict, pca_loss: PCALoss,
 ) -> pd.DataFrame:
 
-    # TODO: copied from diagnostics.handler.Handler::compute_metric; figure out a way to share
     if df.shape[1] % 3 == 1:
         # get rid of "set" column if present
         tmp = df.iloc[:, :-1].to_numpy().reshape(df.shape[0], -1, 3)
@@ -667,36 +666,13 @@ def compute_pca_reprojection_error(
         tmp = df.to_numpy().reshape(df.shape[0], -1, 3)
         set = None
     keypoints_pred = tmp[:, :, :2]  # shape (samples, n_keypoints, 2)
-    keypoints_pred = ModelHandler.resize_keypoints(cfg, keypoints_pred=keypoints_pred)
-    original_dims = keypoints_pred.shape
 
     if pca_loss.loss_name == "pca_multiview":
-
-        mirrored_column_matches = pca_loss.pca.mirrored_column_matches
-        # adding a reshaping below since the loss class expects a single last dim with
-        # num_keypoints*2
-        results_raw = pca_reprojection_error_per_keypoint(
-            pca_loss, keypoints_pred=keypoints_pred.reshape(keypoints_pred.shape[0], -1))
-        results_raw = results_raw.reshape(
-            -1,
-            len(mirrored_column_matches[0]),
-            len(mirrored_column_matches),
-        )  # batch X num_used_keypoints X num_views
-
-        # next, put this back into a full keypoints pred arr
-        results = np.nan * np.zeros((original_dims[0], original_dims[1]))
-        for c, cols in enumerate(mirrored_column_matches):
-            results[:, cols] = results_raw[:, :, c]  # just the columns belonging to view c
-
+        results = pca_multiview_reprojection_error(keypoints_pred, pca_loss.pca, cfg)
     elif pca_loss.loss_name == "pca_singleview":
-
-        pca_cols = pca_loss.pca.columns_for_singleview_pca
-        results_ = pca_reprojection_error_per_keypoint(
-            pca_loss, keypoints_pred=keypoints_pred.reshape(keypoints_pred.shape[0], -1))
-
-        # next, put this back into a full keypoints pred arr
-        results = np.nan * np.zeros((original_dims[0], original_dims[1]))
-        results[:, pca_cols] = results_
+        results = pca_singleview_reprojection_error(keypoints_pred, pca_loss.pca, cfg)
+    else:
+        raise NotImplementedError
 
     # collect results
     df_rpe = pd.DataFrame(columns=keypoint_names)

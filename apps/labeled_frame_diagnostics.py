@@ -49,7 +49,7 @@ import os
 from typing import List, Dict, Tuple, Optional
 import yaml
 
-from diagnostics.reports import concat_dfs, build_metrics_df, get_df_box, get_df_scatter
+from diagnostics.reports import build_metrics_df, concat_dfs, get_df_box, get_df_scatter
 from diagnostics.reports import ReportGenerator, generate_report_labeled
 from diagnostics.streamlit_utils import update_single_file, update_file_list
 from diagnostics.visualizations import make_seaborn_catplot, make_plotly_scatterplot, get_y_label
