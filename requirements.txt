@@ -10,3 +10,5 @@ scipy>=1.2.0
 seaborn
 streamlit
 hydra-core
+tqdm
+typing
