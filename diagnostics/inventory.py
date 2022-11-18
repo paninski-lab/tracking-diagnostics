@@ -92,7 +92,7 @@ class QueryBuilder:
         
         if condition == "in" or condition == "not in":
             # assert that value is a list of strs
-            assert isinstance(value, list) and all([isinstance(v, str) for v in value]), "value must be a list of strings"
+            assert isinstance(value, list), "value must be a list"
             if condition == "in":
                 # this line manually implements the @ operator
                 self.query_list.append(" or ".join([f"`{parameter_name}` == '{v}'" for v in value]))
