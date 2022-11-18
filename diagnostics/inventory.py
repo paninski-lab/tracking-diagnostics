@@ -3,7 +3,7 @@ from tqdm import tqdm
 import pandas as pd
 import os
 import omegaconf
-from typing import List, Literal, Union
+from typing import List, Literal, Union, Optional
 import yaml
 
 
@@ -119,3 +119,30 @@ class QueryBuilder:
         
     def get_query(self) -> pd.DataFrame:
         return self.df.query(self.query_dict)
+
+
+def load_metric_csv(
+        filename: str, metric_name: str, split_set: Optional[str] = None, pd_kwargs: dict = {},
+) -> pd.DataFrame:
+    df = pd.read_csv(filename, **pd_kwargs)
+    # take mean over all columns that are not "set"
+    df["mean"] = df.loc[:, [c for c in df.columns if c != "set"]].mean(axis=1)
+    if split_set is not None:
+        df["set"] = split_set
+    # add mean and metric
+    df["metric"] = metric_name
+    return df
+
+
+def get_model_type(row: pd.Series) -> str:
+    if row["model.model_type"] == "heatmap":
+        if row["model.losses_to_use"] == "[]":
+            model_type = "baseline"
+        else:
+            model_type = "semi-super"
+    elif row["model.model_type"] == "heatmap_mhcrnn":
+        if row["model.losses_to_use"] == "[]":
+            model_type = "context"
+        else:
+            model_type = "semi-super context"
+    return model_type
