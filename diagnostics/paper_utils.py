@@ -2,6 +2,7 @@
 
 import matplotlib.pyplot as plt
 from matplotlib.gridspec import SubplotSpec
+import matplotlib.ticker as mticker
 import numpy as np
 import os
 import pandas as pd
@@ -35,6 +36,11 @@ def plot_scatters(
     assert np.all(df_xs.index == df_ys.index)
     xs = df_xs.to_numpy()
     ys = df_ys.to_numpy()
+    if np.max(ys) <= 1.0:
+        scale = 'linear'
+    if scale == 'log':
+        xs = np.log10(xs)
+        ys = np.log10(ys)
     rng_seed = df[mask_0].rng_seed_data_pt.to_numpy()
     mn = np.min([np.percentile(xs, 1), np.percentile(ys, 1)])
     mx = np.max([np.percentile(xs, 99), np.percentile(ys, 99)])
@@ -43,10 +49,18 @@ def plot_scatters(
             xs[rng_seed == r], ys[rng_seed == r], marker=symbols[j], color='k',
             s=markersize, alpha=alpha, label='RNG seed %s' % r)
 
-    if np.max(ys) <= 1.0:
-        scale = 'linear'
-    ax.set_xscale(scale)
-    ax.set_yscale(scale)
+    if scale == 'log':
+        # https://stackoverflow.com/questions/63723514/userwarning-fixedformatter-should-only-be-used-together-with-fixedlocator
+        label_format = '{:,.1f}'
+        ax.xaxis.set_major_locator(mticker.MaxNLocator(4))
+        ticks_loc = ax.get_xticks().tolist()
+        ax.xaxis.set_major_locator(mticker.FixedLocator(ticks_loc))
+        ax.set_xticklabels([label_format.format(10**x) for x in ticks_loc])
+
+        ax.yaxis.set_major_locator(mticker.MaxNLocator(4))
+        ticks_loc = ax.get_yticks().tolist()
+        ax.yaxis.set_major_locator(mticker.FixedLocator(ticks_loc))
+        ax.set_yticklabels([label_format.format(10 ** y) for y in ticks_loc])
 
     ret_vals = None
     if add_diagonal:
@@ -60,18 +74,11 @@ def plot_scatters(
                 ax.set_ylim(mn - 0.1 * mx, 1.1 * mx)
 
     if add_trendline:
-        if scale == 'linear':
-            zs = np.polyfit(xs, ys, 1)
-            p = np.poly1d(zs)
-            r_val, p_val = pearsonr(xs, ys)
-            xs_sorted = np.sort(xs)
-            ax.plot(xs_sorted, p(xs_sorted), '--r')
-        else:
-            zs = np.polyfit(np.log10(xs), np.log10(ys), 1)
-            p = np.poly1d(zs)
-            r_val, p_val = pearsonr(np.log10(xs), np.log10(ys))
-            xs_sorted = np.sort(xs)
-            ax.plot(xs_sorted, p(xs_sorted), '--r')
+        zs = np.polyfit(xs, ys, 1)
+        p = np.poly1d(zs)
+        r_val, p_val = pearsonr(xs, ys)
+        xs_sorted = np.sort(xs)
+        ax.plot(xs_sorted, p(xs_sorted), '--r')
         ret_vals = r_val, p_val
 
     return ret_vals
@@ -268,9 +275,8 @@ def plot_metric_bars_and_scatters_labeled(
     # row 2: scatterplots of metrics on OOD data for 2 models
     n_rows = 2
 
-    fig, axes = plt.subplots(n_rows, len(plots), figsize=(4 * len(plots), 3.5 * n_rows + 0.5))
-    if n_rows == 1:
-        axes = [axes]
+    fig, axes = plt.subplots(
+        n_rows, len(plots), figsize=(4 * len(plots), 3.5 * n_rows + 0.5), squeeze=False)
 
     for i, (metric_name, ax_title) in enumerate(plots.items()):
         mask = ((df_labeled_metrics.set == split_set)
@@ -337,7 +343,8 @@ def plot_metric_vs_pixerror_scatters(
     n_cols = len(plots)
     n_rows = len(models_to_compare)
 
-    fig, axes = plt.subplots(n_rows, n_cols, figsize=(4 * n_cols, 3.5 * n_rows + 0.5))
+    fig, axes = plt.subplots(
+        n_rows, n_cols, figsize=(4 * n_cols, 3.5 * n_rows + 0.5), squeeze=False)
     grid = plt.GridSpec(n_rows, n_cols)
 
     for j, model_type in enumerate(models_to_compare):
@@ -351,7 +358,7 @@ def plot_metric_vs_pixerror_scatters(
             axes[j][i].set_title('r=%1.2f [p=%1.3f]' % (r_val, p_val))
             axes[j][i].set_xlabel('Pixel error', fontsize=labels_fontsize)
             axes[j][i].set_ylabel('%s' % ax_title, fontsize=labels_fontsize)
-            if i == 0:
+            if (i == 0) and (j == 0):
                 axes[j][i].legend()
 
     if title is not None:
@@ -371,7 +378,7 @@ def plot_metric_vs_pixerror_scatters(
 def plot_metric_vs_metric_scatters(
         df_labeled_metrics, models_to_compare, keypoint, train_frames, split_set,
         title=None, display_plot=True, save_file=None):
-    """Metric vs pixel error for multiple models."""
+    """Metric vs metric for multiple models."""
 
     plots = {
         'pca_singleview_error': 'Pose PCA (pix)',
@@ -382,7 +389,9 @@ def plot_metric_vs_metric_scatters(
     n_cols = len(plots) if 'pca_multiview_error' not in plots else len(plots) + 1
     n_rows = len(models_to_compare)
 
-    fig, axes = plt.subplots(n_rows, n_cols, figsize=(4 * n_cols, 3.5 * n_rows + 0.5))
+    fig, axes = plt.subplots(
+        n_rows, n_cols, figsize=(4 * n_cols, 3.5 * n_rows + 0.5), squeeze=False)
+
     grid = plt.GridSpec(n_rows, n_cols)
 
     for j, model_type in enumerate(models_to_compare):
@@ -442,9 +451,8 @@ def plot_metric_bars_and_scatters_video(
     # row 2: scatterplots of metrics on OOD data for 2 models
     n_rows = 2
 
-    fig, axes = plt.subplots(n_rows, len(plots), figsize=(4 * len(plots), 3.5 * n_rows + 0.5))
-    if n_rows == 1:
-        axes = [axes]
+    fig, axes = plt.subplots(
+        n_rows, len(plots), figsize=(4 * len(plots), 3.5 * n_rows + 0.5), squeeze=False)
 
     for i, (metric_name, ax_title) in enumerate(plots.items()):
 
