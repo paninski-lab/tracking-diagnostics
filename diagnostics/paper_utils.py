@@ -6,6 +6,7 @@ import matplotlib.ticker as mticker
 import numpy as np
 import os
 import pandas as pd
+from PIL import Image
 import plotly.express as px
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
@@ -19,11 +20,96 @@ labels_fontsize = 12
 # -------------------------------------------------------------------------------------------------
 # these functions produce plots in a single axis
 # -------------------------------------------------------------------------------------------------
+def get_frame_examples(
+        df_labeled_metrics, df_labeled_preds, df_ground_truth, project_dir,
+        n_max_frames=4, conf_thresh=0.95, pix_err_thresh=10,
+        pca_type='pca_singleview_error', rng_seed_data_pt='0', split_set='test', train_frames='75',
+        model_type='baseline'):
+
+    cols_to_drop = [
+        'set', 'metric', 'distribution', 'model_path', 'rng_seed_data_pt', 'train_frames',
+        'model_type', 'mean',
+    ]
+    # subselect metrics
+    mask = ((df_labeled_metrics.set == split_set)
+            & (df_labeled_metrics.train_frames == train_frames)
+            & (df_labeled_metrics.distribution == 'OOD')
+            & (df_labeled_metrics.model_type == model_type)
+            & (df_labeled_metrics.rng_seed_data_pt == rng_seed_data_pt)
+            )
+    df_test = df_labeled_metrics[mask]
+    # just look at means across keypoints for each metric; "sample" will shuffle the df
+    np.random.seed(0)
+    df_means = df_test.pivot(columns='metric', values='mean').sample(frac=1)
+    # retain frames that have high confidence and high pixel error
+    df_selected = df_means[
+        (df_means.confidence > conf_thresh) & (df_means.pixel_error > pix_err_thresh)]
+    # get df for a single frame; one row for each metric, one col for each keypoint
+    results = []
+    for idx, index in enumerate(df_selected.index):
+        if len(results) == n_max_frames:
+            break
+        df_image = df_test.loc[index]
+        # now look at individual keypoints
+        # retain keypoints with high likelihood
+        kp_filter1 = df_image[df_image.metric == 'confidence'].drop(
+            columns=cols_to_drop) > conf_thresh
+        # retain keypoints with labels
+        kp_filter2 = df_image[df_image.metric == 'pixel_error'].drop(
+            columns=cols_to_drop) > pix_err_thresh
+        kp_filter = kp_filter1 & kp_filter2
+        # get keypoint that survives these filters with highest pca singleview error
+        kp_name = df_image[df_image.metric == pca_type].drop(columns=cols_to_drop)[kp_filter].idxmax(axis=1)[0]
+        if not isinstance(kp_name, str):
+            # this happens if we filtered out all columns
+            continue
+        frame_name = df_image.index[0]
+        kp_conf = df_image[df_image.metric == 'confidence'][kp_name][0]
+        kp_pix_err = df_image[df_image.metric == 'pixel_error'][kp_name][0]
+        kp_pca_err = df_image[df_image.metric == pca_type][kp_name][0]
+        if kp_pca_err < pix_err_thresh:
+            continue
+        # get predictions
+        mask_ = ((df_labeled_preds.set == split_set)
+                 & (df_labeled_preds.train_frames == train_frames)
+                 & (df_labeled_preds.distribution == 'OOD')
+                 & (df_labeled_preds.model_type == model_type)
+                 & (df_labeled_preds.rng_seed_data_pt == rng_seed_data_pt)
+                 )
+        df_coords = df_labeled_preds[mask_ & (df_labeled_preds.index == frame_name)][kp_name]
+        file_name = os.path.join(project_dir, frame_name)
+        image = Image.open(file_name).convert("RGB")
+        results.append({
+            'frame': image,
+            'x_pred': df_coords['x'][0],
+            'y_pred': df_coords['y'][0],
+            'x_true': df_ground_truth.loc[frame_name, kp_name]['x'],
+            'y_true': df_ground_truth.loc[frame_name, kp_name]['y'],
+            'kp_name': kp_name,
+            'confidence': kp_conf,
+            'pixel_error': kp_pix_err,
+            'pca_error': kp_pca_err,
+        })
+    return results
+
+
+# -------------------------------------------------------------------------------------------------
+# these functions produce plots in a single axis
+# -------------------------------------------------------------------------------------------------
 def plot_scatters(
         df, metric_names, train_frames, split_set, distribution, model_types, keypoint, ax,
         add_diagonal=False, add_trendline=False, markersize=None, alpha=0.25, scale='linear',
+        color='k',
 ):
     """Plot scatters using matplotlib"""
+
+    if scale == 'linear':
+        scale_x = 'linear'
+        scale_y = 'linear'
+    else:
+        scale_x = 'log'
+        scale_y = 'log'
+
     symbols = ['.', '+', '^', 's', 'o']
     mask_0 = get_scatter_mask(
         df=df, metric_name=metric_names[0], train_frames=train_frames, split_set=split_set,
@@ -36,27 +122,43 @@ def plot_scatters(
     assert np.all(df_xs.index == df_ys.index)
     xs = df_xs.to_numpy()
     ys = df_ys.to_numpy()
-    if np.max(ys) <= 1.0:
-        scale = 'linear'
-    if scale == 'log':
+    if np.nanmax(ys) <= 1.0:
+        scale_y = 'linear'
+    if np.nanmax(xs) <= 1.0:
+        scale_x = 'linear'
+    if scale_x == 'log':
         xs = np.log10(xs)
+    if scale_y == 'log':
         ys = np.log10(ys)
     rng_seed = df[mask_0].rng_seed_data_pt.to_numpy()
-    mn = np.min([np.percentile(xs, 1), np.percentile(ys, 1)])
-    mx = np.max([np.percentile(xs, 99), np.percentile(ys, 99)])
-    for j, r in enumerate(np.unique(rng_seed)):
-        ax.scatter(
-            xs[rng_seed == r], ys[rng_seed == r], marker=symbols[j], color='k',
-            s=markersize, alpha=alpha, label='RNG seed %s' % r)
+    # mn = np.nanmin([np.nanpercentile(xs, 1), np.nanpercentile(ys, 1)])
+    # mx = np.nanmax([np.nanpercentile(xs, 99), np.nanpercentile(ys, 99)])
+    mn = np.nanmin([np.nanmin(xs), np.nanmin(ys)])
+    mx = np.nanmax([np.nanmax(xs), np.nanmax(ys)])
+    if color == 'by_video':
+        video_names = df[mask_0].video_name.to_numpy()
+        for j, r in enumerate(np.unique(rng_seed)):
+            ax.set_prop_cycle(None)
+            for i, video_name in enumerate(np.unique(video_names)):
+                ax.scatter(
+                    xs[(rng_seed == r) & (video_names == video_name)],
+                    ys[(rng_seed == r) & (video_names == video_name)],
+                    marker=symbols[j], s=markersize, alpha=alpha, edgecolors='none',
+                    label='RNG seed %s, video %s' % (r, video_name))
+    else:
+        for j, r in enumerate(np.unique(rng_seed)):
+            ax.scatter(
+                xs[rng_seed == r], ys[rng_seed == r], marker=symbols[j], color=color,
+                s=markersize, alpha=alpha, label='RNG seed %s' % r)
 
-    if scale == 'log':
-        # https://stackoverflow.com/questions/63723514/userwarning-fixedformatter-should-only-be-used-together-with-fixedlocator
-        label_format = '{:,.1f}'
+    # https://stackoverflow.com/questions/63723514/userwarning-fixedformatter-should-only-be-used-together-with-fixedlocator
+    label_format = '{:,.1f}'
+    if scale_x == 'log':
         ax.xaxis.set_major_locator(mticker.MaxNLocator(4))
         ticks_loc = ax.get_xticks().tolist()
         ax.xaxis.set_major_locator(mticker.FixedLocator(ticks_loc))
-        ax.set_xticklabels([label_format.format(10**x) for x in ticks_loc])
-
+        ax.set_xticklabels([label_format.format(10 ** x) for x in ticks_loc])
+    if scale_y == 'log':
         ax.yaxis.set_major_locator(mticker.MaxNLocator(4))
         ticks_loc = ax.get_yticks().tolist()
         ax.yaxis.set_major_locator(mticker.FixedLocator(ticks_loc))
@@ -64,20 +166,21 @@ def plot_scatters(
 
     ret_vals = None
     if add_diagonal:
-        ax.plot([mn, mx], [mn, mx], 'k')
-        if scale == 'linear':
-            if mx < 1.0:
-                ax.set_xlim(mn - 0.005 * mx, 1.005 * mx)
-                ax.set_ylim(mn - 0.005 * mx, 1.005 * mx)
-            else:
-                ax.set_xlim(mn - 0.1 * mx, 1.1 * mx)
-                ax.set_ylim(mn - 0.1 * mx, 1.1 * mx)
+        span = mx - mn
+        if not np.isnan(span):
+            ax.plot([mn, mx], [mn, mx], 'k')
+            if scale == 'linear':
+                ax.set_xlim(mn - 0.05 * span, mx + 0.05 * span)
+                ax.set_ylim(mn - 0.05 * span, mx + 0.05 * span)
 
     if add_trendline:
-        zs = np.polyfit(xs, ys, 1)
+        nan_idxs = np.isnan(xs) | np.isnan(ys)
+        xs_nonan = xs[~nan_idxs]
+        ys_nonan = ys[~nan_idxs]
+        zs = np.polyfit(xs_nonan, ys_nonan, 1)
         p = np.poly1d(zs)
-        r_val, p_val = pearsonr(xs, ys)
-        xs_sorted = np.sort(xs)
+        r_val, p_val = pearsonr(xs_nonan, ys_nonan)
+        xs_sorted = np.sort(xs_nonan)
         ax.plot(xs_sorted, p(xs_sorted), '--r')
         ret_vals = r_val, p_val
 
@@ -85,7 +188,8 @@ def plot_scatters(
 
 
 def get_scatter_mask(
-        df, metric_name, train_frames, model_type, split_set=None, distribution=None):
+        df, metric_name, train_frames, model_type, split_set=None, distribution=None,
+        rng_seed=None):
     mask = ((df.metric == metric_name)
             & (df.train_frames == train_frames)
             & (df.model_type == model_type))
@@ -93,6 +197,8 @@ def get_scatter_mask(
         mask = mask & (df.set == split_set)
     if distribution is not None:
         mask = mask & (df.distribution == distribution)
+    if rng_seed is not None:
+        mask = mask & (df.rng_seed_data_pt == rng_seed)
     return mask
 
 
@@ -602,3 +708,53 @@ def generate_report_video(
                         models_to_compare=models_to_compare, keypoint=keypoint, vid_name=vid_name,
                         train_frames=train_frames, rng_seed=rng_seed, time_window=time_window,
                         display_plot=False, save_file=save_file)
+
+
+# -------------------------------------------------------------------------------------------------
+# these are util functions for creating metric dataframes
+# -------------------------------------------------------------------------------------------------
+def update_col_names(df):
+    old_names_0 = df.columns.levels[0]
+    new_names_0 = {}
+    for n in old_names_0:
+        new_name = n if n.find("Unnamed") == -1 else "set"
+        new_names_0[n] = new_name
+    old_names_1 = df.columns.levels[1]
+    new_names_1 = {}
+    for n in old_names_1:
+        new_name = n if n.find("Unnamed") == -1 else ""
+        new_names_1[n] = new_name
+    df = df.rename(columns=new_names_0, level=0)
+    df = df.rename(columns=new_names_1, level=1)
+    return df
+
+
+def get_video_names(file_list):
+    video_names = []
+    for file in file_list:
+        if "_pca_singleview_error" in file:
+            continue
+        elif "_pca_multiview_error" in file:
+            continue
+        elif "_temporal_norm" in file:
+            continue
+        else:
+            video_names.append(file.replace(".csv", ""))
+    return video_names
+
+
+def add_model_metadata(df, model, levels):
+    from diagnostics.inventory import get_model_type
+    updates = {
+        "model_path": model["path"],
+        "rng_seed_data_pt": model["training.rng_seed_data_pt"],
+        "train_frames": model["training.train_frames"],
+        "model_type": get_model_type(model),
+    }
+    for key, val in updates.items():
+        # always put the key at the top level of a multi-index
+        # fill out remaining levels with empty strings
+        acc_str = (key,)
+        for _ in range(1, levels):
+            acc_str += ("",)
+        df.loc[:, acc_str] = val
