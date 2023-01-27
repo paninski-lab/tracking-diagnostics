@@ -202,6 +202,7 @@ def run():
 
         # enumerate plotting options
         plot_type = st.selectbox("Pick a plot type:", catplot_options)
+        plot_epsilon = st.text_input("Epsilon", 0)
         plot_scale = st.radio("Select y-axis scale", scale_options)
 
         # filter data
@@ -219,7 +220,7 @@ def run():
             sns.set_context("paper")
             fig_box = sns.catplot(
                 x="model_name", y="value", col="keypoint", col_wrap=n_cols, sharey=False,
-                kind=plot_type, data=df_box, height=2)
+                kind=plot_type, data=df_box[df_box["value"] > int(plot_epsilon)], height=2)
             fig_box.set_axis_labels("Model Name", y_label)
             fig_box.set_xticklabels(rotation=45, ha="right")
             if len(keypoint_names) > 9:
@@ -233,7 +234,9 @@ def run():
         else:
 
             fig_box = make_seaborn_catplot(
-                x="model_name", y=keypoint_to_plot, data=df_metrics_filt, x_label="Model Name",
+                x="model_name", y=keypoint_to_plot,
+                data=df_metrics_filt[df_metrics_filt[keypoint_to_plot] > int(plot_epsilon)],
+                x_label="Model Name",
                 y_label=y_label, title=title, log_y=log_y, plot_type=plot_type)
             st.pyplot(fig_box)
 

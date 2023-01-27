@@ -134,7 +134,22 @@ def load_metric_csv(
     return df
 
 
-def get_model_type(row: pd.Series) -> str:
+def load_confidence_csv(filename):
+    df = pd.read_csv(filename, header=[1, 2], index_col=0)
+    vals = df.to_numpy()
+    likelihoods = vals[:, 2::3]
+    splits = vals[:, -1]
+    keypoint_names = df.columns.get_level_values(0)[2::3]
+    df_confs = pd.DataFrame(likelihoods, columns=keypoint_names, index=df.index)
+    df_confs["mean"] = df_confs.mean(axis=1)
+    if vals.shape[1] % 3 == 1:
+        # labeled data
+        df_confs["set"] = splits
+    df_confs["metric"] = "confidence"
+    return df_confs
+
+
+def get_model_type(row: Union[pd.Series, dict]) -> str:
     if row["model.model_type"] == "heatmap":
         if row["model.losses_to_use"] == "[]":
             model_type = "baseline"
@@ -145,4 +160,6 @@ def get_model_type(row: pd.Series) -> str:
             model_type = "context"
         else:
             model_type = "semi-super context"
+    elif row["model.model_type"] == "dlc":
+        model_type = "dlc"
     return model_type
