@@ -11,10 +11,7 @@ from brainbox.behavior.dlc import get_smooth_pupil_diameter, get_pupil_diameter
 from diagnostics.ensemble_kalman_filter import filtering_pass, smooth_backward, ensemble_median
 from lightning_pose.utils.predictions import PredictionHandler
 import yaml
-from lightning_pose.utils.io import return_absolute_data_paths
-from lightning_pose.utils.scripts import (
-    get_imgaug_transform, get_dataset, get_data_module, get_loss_factories,
-)    
+
 
 def convert_lp_dlc(df_lp, keypoint_names, model_name='heatmap_tracker'):
     df_dlc = {} 
