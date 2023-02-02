@@ -1,8 +1,35 @@
 import numpy as np
 from collections import defaultdict
-from brainbox.behavior.dlc import get_smooth_pupil_diameter, get_pupil_diameter
+from brainbox.behavior.dlc import get_pupil_diameter
 
 def filtering_pass(y, m0, S0, C, R, A, Q, ensemble_vars):
+    """Implements Kalman-filter from - https://random-walks.org/content/misc/kalman/kalman.html
+    Args:
+        y: np.ndarray
+            shape (samples, n_keypoints)
+        m0: np.ndarray
+            shape (n_latents)
+        S0: np.ndarray
+            shape (n_latents, n_latents)
+        C: np.ndarray
+            shape (n_keypoints, n_latents)
+        R: np.ndarray
+            shape (n_keypoints, n_keypoints)
+        A: np.ndarray
+            shape (n_latents, n_latents)
+        Q: np.ndarray
+            shape (n_latents, n_latents)
+        ensemble_vars: np.ndarray
+            shape (samples, n_keypoints)
+
+    Returns:
+        mf: np.ndarray
+            shape (samples, n_keypoints)
+        Vf: np.ndarray
+            shape (samples, n_latents, n_latents)
+        S: np.ndarray
+            shape (samples, n_latents, n_latents)
+    """
     #time-varying observation variance
     for i in range(ensemble_vars.shape[1]):
         R[i,i] = ensemble_vars[0][i]
@@ -36,6 +63,31 @@ def kalman_dot(array, V, C, R):
     return K_array
 
 def smooth_backward(y, mf, Vf, S, A, Q, C):
+    """Implements Kalman-smoothing backwards from - https://random-walks.org/content/misc/kalman/kalman.html
+    Args:
+        y: np.ndarray
+            shape (samples, n_keypoints)
+        mf: np.ndarray
+            shape (samples, n_keypoints)
+        Vf: np.ndarray
+            shape (samples, n_latents, n_latents)
+        S: np.ndarray
+            shape (samples, n_latents, n_latents)
+        A: np.ndarray
+            shape (n_latents, n_latents)
+        Q: np.ndarray
+            shape (n_latents, n_latents)
+        C: np.ndarray
+            shape (n_keypoints, n_latents)
+
+    Returns:
+        ms: np.ndarray
+            shape (samples, n_keypoints)
+        Vs: np.ndarray
+            shape (samples, n_latents, n_latents)
+        CV: np.ndarray
+            shape (samples, n_latents, n_latents)
+    """
     T = y.shape[0]
     ms = np.zeros(shape=(T, mf.shape[1]))
     Vs = np.zeros(shape=(T, mf.shape[1], mf.shape[1]))
@@ -57,6 +109,27 @@ def smooth_backward(y, mf, Vf, S, A, Q, C):
     return ms, Vs, CV
 
 def ensemble_median(markers_list, keys):
+    """Computes ensemble median and variance of list of DLC marker dataframes
+    Args:
+        markers_list: list
+            List of DLC marker dataframes
+        keys: list
+            List of keys in each marker dataframe
+            
+    Returns:
+        ensemble_preds: np.ndarray
+            shape (samples, n_keypoints)
+        ensemble_vars: np.ndarray
+            shape (samples, n_keypoints)
+        ensemble_stacks: np.ndarray
+            shape (n_models, samples, n_keypoints)
+        keypoints_median_dict: dict
+            keys: marker keypoints, values: shape (samples)
+        keypoints_var_dict: dict
+            keys: marker keypoints, values: shape (samples)
+        keypoints_stack_dict: dict(dict)
+            keys: model_ids, keys: marker keypoints, values: shape (samples)
+    """
     ensemble_stacks = []
     ensemble_vars = []
     ensemble_preds = []
@@ -81,49 +154,3 @@ def ensemble_median(markers_list, keys):
     ensemble_vars = np.asarray(ensemble_vars).T
     ensemble_stacks = np.asarray(ensemble_stacks).T
     return ensemble_preds, ensemble_vars, ensemble_stacks, keypoints_median_dict, keypoints_var_dict, keypoints_stack_dict
-
-
-def get_pupil_kalman_parameters(baseline_ensemble_preds, baseline_ensemble_stacks, pupil_locations, pupil_diameters):
-    #compute center of mass
-    com_obs = pupil_locations
-    mean_x_obs = np.mean(com_obs[:,0])
-    mean_y_obs = np.mean(com_obs[:,1])
-    x_t_obs, y_t_obs = com_obs[:,0] - mean_x_obs, com_obs[:,1] - mean_y_obs #make the mean zero
-    #compute diameter
-    d_t_obs = pupil_diameters
-    mean_d_t_obs = np.mean(d_t_obs)
-
-    #latent variables (observed)
-    z_t_obs = np.vstack((d_t_obs, x_t_obs, y_t_obs)) #latent variables - diameter, com_x, com_y
-
-    ##### Set values for kalman filter #####
-    m0 = np.asarray([np.mean(d_t_obs), 0.0, 0.0]) # initial state: mean
-    S0 =  np.asarray([[np.var(d_t_obs), 0.0, 0.0], [0.0 , np.var(x_t_obs), 0.0], [0.0, 0.0 , np.var(y_t_obs)]]) # diagonal: var
-
-    A = np.asarray([[.999, 0, 0], [0, .999, 0], [0, 0, .999]]) #state-transition matrix, parameters hand-picked for smoothing purposes
-    Q = np.asarray([[np.var(d_t_obs)*(1-(A[0,0]**2)), 0, 0], [0, np.var(x_t_obs)*(1-A[1,1]**2), 0], [0, 0, np.var(y_t_obs)*(1-(A[2,2]**2))]]) #state covariance matrix
-
-    #['pupil_top_r_x', 'pupil_top_r_y', 'pupil_bottom_r_x', 'pupil_bottom_r_y', 'pupil_right_r_x', 'pupil_right_r_y', 'pupil_left_r_x', 'pupil_left_r_y'] 
-    C = np.asarray([[0, 1, 0], [-.5, 0, 1], [0, 1, 0], [.5, 0, 1], [.5, 1, 0], [0, 0, 1], [-.5, 1, 0], [0, 0, 1]]) # Measurement function
-    R = np.eye(8) # placeholder diagonal matrix for ensemble variance
-
-    baseline_ensemble_preds_copy = baseline_ensemble_preds.copy()
-    baseline_ensemble_stacks_copy = baseline_ensemble_stacks.copy()
-
-    #subtract COM means from the ensemble predictions
-    for i in range(baseline_ensemble_preds.shape[1]):
-        if i % 2 == 0:
-            baseline_ensemble_preds_copy[:, i] -= mean_x_obs
-        else:
-            baseline_ensemble_preds_copy[:, i] -= mean_y_obs
-
-    #subtract COM means from all the predictions
-    for i in range(baseline_ensemble_preds.shape[1]):
-        if i % 2 == 0:
-            baseline_ensemble_stacks_copy[:,:,i] -= mean_x_obs
-        else:
-            baseline_ensemble_stacks_copy[:,:,i] -= mean_y_obs
-
-    y = baseline_ensemble_preds_copy
-    
-    return m0, S0, A, Q, C, R, y, mean_x_obs, mean_y_obs
