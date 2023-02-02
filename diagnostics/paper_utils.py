@@ -10,7 +10,7 @@ from PIL import Image
 import plotly.express as px
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
-from scipy.stats import pearsonr
+from scipy import stats
 import seaborn as sns
 
 
@@ -96,10 +96,41 @@ def get_frame_examples(
 # -------------------------------------------------------------------------------------------------
 # these functions produce plots in a single axis
 # -------------------------------------------------------------------------------------------------
+def pearsonr_ci(x, y, alpha=0.05):
+    """calculate Pearson correlation along with the confidence interval using scipy and numpy
+
+    from https://zhiyzuo.github.io/Pearson-Correlation-CI-in-Python/
+
+    Parameters
+    ----------
+    x, y : iterable object such as a list or np.array
+      Input for correlation calculation
+    alpha : float
+      Significance level. 0.05 by default
+
+    Returns
+    -------
+    r : float
+      Pearson's correlation coefficient
+    pval : float
+      The corresponding p value
+    lo, hi : float
+      The lower and upper bound of confidence intervals
+
+    """
+    r, p = stats.pearsonr(x, y)
+    r_z = np.arctanh(r)
+    se = 1/np.sqrt(x.size-3)
+    z = stats.norm.ppf(1-alpha/2)
+    lo_z, hi_z = r_z-z*se, r_z+z*se
+    lo, hi = np.tanh((lo_z, hi_z))
+    return r, p, lo, hi
+
+
 def plot_scatters(
         df, metric_names, train_frames, split_set, distribution, model_types, keypoint, ax,
         add_diagonal=False, add_trendline=False, markersize=None, alpha=0.25, scale='linear',
-        color='k',
+        color='k', trendline_kwargs={},
 ):
     """Plot scatters using matplotlib"""
 
@@ -110,7 +141,8 @@ def plot_scatters(
         scale_x = 'log'
         scale_y = 'log'
 
-    symbols = ['.', '+', '^', 's', 'o']
+    # symbols = ['.', '+', '^', 's', 'o']
+    symbols = ['.', '.', '.', '.', '.']
     mask_0 = get_scatter_mask(
         df=df, metric_name=metric_names[0], train_frames=train_frames, split_set=split_set,
         distribution=distribution, model_type=model_types[0])
@@ -151,6 +183,16 @@ def plot_scatters(
                 xs[rng_seed == r], ys[rng_seed == r], marker=symbols[j], color=color,
                 s=markersize, alpha=alpha, label='RNG seed %s' % r)
 
+    # span = mx - mn
+    # m1 = mn - 0.05 * span
+    # m2 = mx + 0.05 * span
+    # ax.set_xlim(m1, m2)
+    # ax.set_ylim(m1, m2)
+    # print(m1)
+    # print(m2)
+    # ax.set_xlim(-0.3, 2)
+    # ax.set_ylim(-0.3, 2)
+
     # https://stackoverflow.com/questions/63723514/userwarning-fixedformatter-should-only-be-used-together-with-fixedlocator
     label_format = '{:,.1f}'
     if scale_x == 'log':
@@ -179,10 +221,12 @@ def plot_scatters(
         ys_nonan = ys[~nan_idxs]
         zs = np.polyfit(xs_nonan, ys_nonan, 1)
         p = np.poly1d(zs)
-        r_val, p_val = pearsonr(xs_nonan, ys_nonan)
+        # r_val, p_val = stats.pearsonr(xs_nonan, ys_nonan)
+        r_val, p_val, lo, hi = pearsonr_ci(xs_nonan, ys_nonan)
         xs_sorted = np.sort(xs_nonan)
-        ax.plot(xs_sorted, p(xs_sorted), '--r')
-        ret_vals = r_val, p_val
+        # ax.plot(xs_sorted, p(xs_sorted), '--r')
+        ax.plot(xs_sorted, p(xs_sorted), **trendline_kwargs)
+        ret_vals = r_val, p_val, lo, hi
 
     return ret_vals
 
