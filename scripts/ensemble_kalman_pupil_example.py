@@ -1,17 +1,8 @@
-import glob
-import matplotlib.pyplot as plt
 import numpy as np
-from omegaconf import DictConfig, OmegaConf
 import os
-import seaborn as sns
 import pandas as pd
-from tqdm import tqdm
-import scipy
-from brainbox.behavior.dlc import get_smooth_pupil_diameter, get_pupil_diameter
+from brainbox.behavior.dlc import get_pupil_diameter
 from diagnostics.ensemble_kalman_filter import filtering_pass, smooth_backward, ensemble_median
-from lightning_pose.utils.predictions import PredictionHandler
-import yaml
-
 
 def convert_lp_dlc(df_lp, keypoint_names, model_name='heatmap_tracker'):
     df_dlc = {} 
@@ -143,7 +134,7 @@ print("done smoothing")
 y_m_smooth = np.dot(C, ms.T).T
 y_v_smooth = np.swapaxes(np.dot(C, np.dot(Vs, C.T)), 0, 1)
 
-def make_dlc_pandas_index(cfg, keypoint_names):
+def make_dlc_pandas_index(keypoint_names):
     xyl_labels = ["x", "y", "likelihood"]
     pdindex = pd.MultiIndex.from_product(
         [["%s_tracker" % 'ensemble-kalman'], keypoint_names, xyl_labels],
@@ -152,13 +143,7 @@ def make_dlc_pandas_index(cfg, keypoint_names):
     return pdindex
 
 #make dataframes
-with open('/home/cole/lightning-pose/scripts/configs_ibl-pupil/config_ibl-pupil.yaml', 'r') as stream:
-    try:
-        cfg=yaml.safe_load(stream)
-    except yaml.YAMLError as exc:
-        print(exc)
-cfg = OmegaConf.create(cfg)      
-pdindex = make_dlc_pandas_index(cfg, keypoint_names)
+pdindex = make_dlc_pandas_index(keypoint_names)
 
 processed_arr_dict = add_mean_to_array(y_m_smooth, keys, mean_x_obs, mean_y_obs)
 key_pair_list = [['pupil_top_r_x', 'pupil_top_r_y'], ['pupil_right_r_x', 'pupil_right_r_y'], ['pupil_bottom_r_x', 'pupil_bottom_r_y'], ['pupil_left_r_x', 'pupil_left_r_y']]
