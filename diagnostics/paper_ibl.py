@@ -1,7 +1,6 @@
 """Pipeline objects for analyzing ibl pupil and paw data in lightning pose paper."""
 
-from brainbox.behavior.dlc import (
-    plt_window, insert_idx, WINDOW_LEN, WINDOW_LAG, SAMPLING, RESOLUTION)
+from brainbox.behavior.dlc import plt_window, insert_idx, WINDOW_LEN, SAMPLING, RESOLUTION
 from brainbox.io.one import SessionLoader
 from brainwidemap.bwm_loading import (
     bwm_query, load_good_units, load_trials_and_mask, merge_probes)
@@ -27,7 +26,7 @@ conda_env = 'pose'
 
 class Pipeline(object):
 
-    def __init__(self, eid, one, view, likelihood_thr=0.9):
+    def __init__(self, eid, one, view, base_dir=None, likelihood_thr=0.9):
         self.eid = eid
         self.one = one
         self.view = view
@@ -39,8 +38,46 @@ class Pipeline(object):
 
         self.processed_video_name = None  # set by children classes
 
+        # set paths
         self.paths = Paths()
         self.paths.alyx_session_path = one.eid2path(eid)
+        if base_dir:
+            self.paths.base_dir = base_dir
+            self.paths.video_csv_dir = os.path.join(base_dir, 'video_preds')
+            self.paths.kalman_save_dir = os.path.join(base_dir, 'kalman_outputs')
+            self.paths.decoding_dir = os.path.join(base_dir, 'decoding')
+
+    def pred_csv_file(self, rng_seed):
+        return os.path.join(
+            self.paths.video_csv_dir, f'{self.eid}.{self.view}.rng={rng_seed}.csv')
+
+    @property
+    def kalman_latents_file(self):
+        return os.path.join(
+            self.paths.kalman_save_dir, f'latents.kalman_smoothed.{self.eid}.{self.view}.csv')
+
+    @property
+    def kalman_markers_file(self):
+        return os.path.join(
+            self.paths.kalman_save_dir, f'markers.kalman_smoothed.{self.eid}.{self.view}.csv')
+
+    def reencode_video(self, overwrite, video_file=None, **kwargs):
+        """Re-encode video into yuv420p format needed for lightning pose."""
+        # assume we'll process the standard video
+        if video_file is None:
+            video_in = os.path.join(
+                self.paths.alyx_session_path, 'raw_video_data', self.processed_video_name)
+        else:
+            assert os.path.abspath(video_file)
+            video_in = video_file
+        video_out = video_in.replace('.mp4', '_reencode.mp4')
+        if os.path.exists(video_out) and not overwrite:
+            print(f'{video_out} already exists; skipping')
+            return video_out
+        call_str = \
+            f'ffmpeg -i {video_in} -profile:v main -pix_fmt yuv420p -crf 17 -vsync 0 {video_out}'
+        subprocess.run(['/bin/bash', '-c', call_str], check=True)
+        return video_out
 
     def infer_video(
             self, model_dir, data_dir, pred_csv_file, video_file=None, gpu_id=0, overwrite=False):
@@ -60,7 +97,8 @@ class Pipeline(object):
 
         # assume we are running inference on the standard video
         if video_file is None:
-            video_file = self.processed_video_name
+            video_file = os.path.join(
+                self.paths.alyx_session_path, 'raw_video_data', self.processed_video_name)
 
         # assumes commands are run from root directory of tracking-diagnostics
         inference_script = os.path.join(os.getcwd(), 'scripts', 'predict_video.py')
@@ -153,9 +191,6 @@ class Pipeline(object):
                 dlc_dict=dlc_dict,
                 **params)
 
-    def reencode_video(self, **kwargs):
-        raise NotImplementedError
-
     def smooth_kalman(self, **kwargs):
         raise NotImplementedError
 
@@ -169,7 +204,8 @@ class Pipeline(object):
 class PupilPipeline(Pipeline):
 
     def __init__(self, eid, one, likelihood_thr=0.9, base_dir=None):
-        super().__init__(eid=eid, one=one, view='left', likelihood_thr=likelihood_thr)
+        super().__init__(
+            eid=eid, one=one, view='left', base_dir=base_dir, likelihood_thr=likelihood_thr)
 
         self.processed_video_name = '_iblrig_leftCamera.cropped_brightened.mp4'
         self.keypoint_names = ['pupil_top_r', 'pupil_right_r', 'pupil_bottom_r', 'pupil_left_r']
@@ -185,11 +221,7 @@ class PupilPipeline(Pipeline):
 
         # set paths
         if base_dir:
-            self.paths.base_dir = base_dir
-            self.paths.video_csv_dir = os.path.join(base_dir, 'video_preds')
             self.paths.pupil_csv_dir = os.path.join(base_dir, 'pupil_preds')
-            self.paths.kalman_save_dir = os.path.join(base_dir, 'kalman_outputs')
-            self.paths.decoding_dir = os.path.join(base_dir, 'decoding')
 
     def _find_crop_params(self):
         """Find pupil location in original video for cropping using already-computed markers."""
@@ -209,41 +241,9 @@ class PupilPipeline(Pipeline):
             'pupil_x': med_x, 'pupil_y': med_y,
         }
 
-    def pred_csv_file(self, rng_seed):
-        return os.path.join(
-            self.paths.video_csv_dir, f'{self.eid}.{self.view}.rng={rng_seed}.csv')
-
     def pupil_csv_file(self, rng_seed):
         return os.path.join(
             self.paths.pupil_csv_dir, f'pupil.{self.eid}.{self.view}.rng={rng_seed}.csv')
-
-    @property
-    def kalman_latents_file(self):
-        return os.path.join(
-            self.paths.kalman_save_dir, f'latents.kalman_smoothed.{self.eid}.{self.view}.csv')
-
-    @property
-    def kalman_markers_file(self):
-        return os.path.join(
-            self.paths.kalman_save_dir, f'markers.kalman_smoothed.{self.eid}.{self.view}.csv')
-
-    def reencode_video(self, overwrite, video_file=None, **kwargs):
-        """Re-encode video into yuv420p format needed for lightning pose."""
-        # assume we'll process the standard video
-        if video_file is None:
-            video_in = os.path.join(
-                self.paths.alyx_session_path, 'raw_video_data', self.processed_video_name)
-        else:
-            assert os.path.abspath(video_file)
-            video_in = video_file
-        video_out = video_in.replace('.mp4', 'reencode.mp4')
-        if os.path.exists(video_out) and not overwrite:
-            print(f'{video_out} already exists; skipping')
-            return video_out
-        call_str = \
-            f'ffmpeg -i {video_in} -profile:v main -pix_fmt yuv420p -crf 17 -vsync 0 {video_out}'
-        subprocess.run(['/bin/bash', '-c', call_str], check=True)
-        return video_out
 
     def smooth_ibl(self, pred_csv_file, pupil_csv_file, tracker_name, overwrite=False):
 
@@ -528,6 +528,53 @@ class PupilPipeline(Pipeline):
             'incorrect_traces': incorrect_vals.to_numpy(),
             'times': np.arange(len(correct_peth)) / SAMPLING[self.view] + WINDOW_LAG
         }
+
+
+class PawPipeline(Pipeline):
+
+    def __init__(self, eid, one, view, likelihood_thr=0.9, base_dir=None):
+        super().__init__(
+            eid=eid, one=one, view=view, base_dir=base_dir, likelihood_thr=likelihood_thr)
+
+        if view == 'left':
+            self.processed_video_name = '_iblrig_leftCamera.downsampled.mp4'
+        elif view == 'right':
+            self.processed_video_name = '_iblrig_rightCamera.flipped_downsampled.mp4'
+
+        self.keypoint_names = ['paw_l', 'paw_r']
+
+        # load video cap
+        self.video = Video()
+        self.video.load_video_cap(os.path.join(
+            self.paths.alyx_session_path, 'raw_video_data', self.processed_video_name))
+
+        # set paths
+        if base_dir:
+            self.paths.paw_csv_dir = os.path.join(base_dir, 'paw_preds')
+
+    # TODO
+    def smooth_kalman(self, **kwargs):
+        raise NotImplementedError
+
+    # TODO
+    def decode(self, **kwargs):
+        raise NotImplementedError
+
+    # TODO
+    def get_target_data(self, **kwargs):
+        raise NotImplementedError
+
+    # TODO
+    def load_markers(self):
+        pass
+
+    # TODO
+    def load_paw_speed(self):
+        pass
+
+    # TODO
+    def compute_peth(self):
+        pass
 
 
 class Video(object):

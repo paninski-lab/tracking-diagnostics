@@ -13,6 +13,7 @@ from diagnostics.paper_ibl import PupilPipeline
 # ----------------------------
 # pipeline user options
 # ----------------------------
+data_dir = '/media/mattw/behavior/pose-estimation-data-final/ibl-pupil'
 base_dir = '/media/mattw/behavior/results/pose-estimation/ibl-pupil-fixed/ensembling-expts'
 """directory structure
 
@@ -140,7 +141,7 @@ for e, eid in enumerate(eids):
             for rng_seed, model_dir in model_dirs.items():
                 pred_csv_file = pipe.pred_csv_file(rng_seed)
                 pipe.infer_video(
-                    model_dir=model_dir, pred_csv_file=pred_csv_file,
+                    model_dir=model_dir, data_dir=data_dir, pred_csv_file=pred_csv_file,
                     **pipe_kwargs['infer_video']['kwargs'])
 
         # smooth results of each ensemble member using ibl heuristics (savitzy-golay filter)
