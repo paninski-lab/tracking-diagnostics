@@ -181,6 +181,158 @@ def make_labeled_video_wrapper(
     )
 
 
+def make_labeled_video_peths(
+        save_file, cap, points, diams_tr, diams_all, times_tr, times_all,
+        idxs=None, labels=None, likelihood_thresh=0.05,
+        max_frames=None, markersize=6, framerate=20, height=4):
+    """Behavioral video overlaid with markers.
+
+    Parameters
+    ----------
+    save_file
+    cap : cv2.VideoCapture object
+    points : list of dicts
+        keys of marker names and vals of marker values,
+        i.e. `points['paw_l'].shape = (n_t, 3)`
+    labels : list of strs
+        name for each model in `points`
+    likelihood_thresh : float
+    max_frames : int or NoneType
+    framerate : float
+        framerate of video
+    height : float
+        height of video in inches
+
+    """
+
+    tmp_dir = os.path.join(os.path.dirname(save_file), 'tmpZzZ')
+    if not os.path.exists(tmp_dir):
+        os.makedirs(tmp_dir)
+
+    keypoint_names = list(points[0].keys())
+    n_frames = np.min([points[0][keypoint_names[0]].shape[0], max_frames])
+    frame = get_frames_from_idxs(cap, [0])
+    _, _, img_height, img_width, = frame.shape
+
+    h = height
+    w = h * (img_width / img_height)
+    fig, axes = plt.subplots(1, 3, figsize=(w + 2.4 * w, h), squeeze=False)
+
+    mn = np.nanpercentile(diams_all[0], 0.1)
+    mx = np.nanpercentile(diams_all[0], 98)
+
+    for a, ax in enumerate(axes[0]):
+        ax.set_yticks([])
+        ax.set_xticks([])
+    axes[0, 1].spines['top'].set_visible(False)
+    axes[0, 1].spines['right'].set_visible(False)
+    axes[0, 2].spines['top'].set_visible(False)
+    axes[0, 2].spines['right'].set_visible(False)
+
+    # add some text so tight_layout works properly; only need to call once
+    axes[0, 1].set_xlabel('Time [s]')
+    axes[0, 1].set_ylabel('Pupil diameter relative to\ntrial mean[pix]')
+    axes[0, 1].set_title(labels[0])
+    axes[0, 2].set_xlabel('Time [s]')
+    axes[0, 2].set_title(labels[1])
+    plt.tight_layout()
+
+    colors = ['g', 'm', 'b']
+    txt_kwargs = {
+        'fontsize': 14, 'horizontalalignment': 'left',
+        'verticalalignment': 'bottom', 'fontname': 'monospace',
+        'transform': axes[0, 0].transAxes}
+    txt_fr_kwargs = {
+        'fontsize': 14, 'color': [1, 1, 1], 'horizontalalignment': 'left',
+        'verticalalignment': 'top', 'fontname': 'monospace',
+        'bbox': dict(facecolor='k', alpha=0.25, edgecolor='none'),
+        'transform': axes[0, 0].transAxes}
+
+    tr_start = 0
+
+    for n in range(n_frames):
+
+        for ax in axes[0]:
+            ax.clear()  # important!! otherwise each frame will plot on top of the last
+
+        if n % 100 == 0:
+            print('processing frame %03i/%03i' % (n, n_frames))
+
+        # record start of new trial by using times
+        if (n > 0) and (not np.isnan(times_all[n]) and np.isnan(times_all[n - 1])):
+            tr_start = n
+
+        # -------------------------------------------------
+        # frame
+        # -------------------------------------------------
+        # plot original frame
+        if idxs is None:
+            frame = get_frames_from_idxs(cap, [n])
+        elif idxs[n] == -1:
+            frame = np.zeros_like(frame)
+        else:
+            frame = get_frames_from_idxs(cap, [idxs[n]])
+        axes[0, 0].imshow(frame[0, 0], vmin=0, vmax=255, cmap='gray')
+        # plot markers
+        for p, point_dict in enumerate(points):
+            for m, (marker_name, marker_vals) in enumerate(point_dict.items()):
+                if marker_vals[n, 2] < likelihood_thresh:
+                    continue
+                axes[0, 0].plot(
+                    marker_vals[n, 0], marker_vals[n, 1],
+                    'o', markersize=markersize, color=colors[p], alpha=0.75)
+        fr = n if idxs is None else idxs[n]
+        if fr != -1:
+            # add frame number
+            im = axes[0, 0].text(0.02, 0.98, 'frame %i' % fr, **txt_fr_kwargs)
+            # add labels
+            if labels is not None:
+                for p, label_name in enumerate(labels):
+                    # plot label string
+                    axes[0, 0].text(0.04, 0.04 + p * 0.05, label_name, color=colors[p],
+                                    **txt_kwargs)
+        axes[0, 0].set_xlim([0, frame.shape[3]])
+        axes[0, 0].set_ylim([frame.shape[2], 0])
+        axes[0, 0].set_yticks([])
+        axes[0, 0].set_xticks([])
+
+        # -------------------------------------------------
+        # dlc traces
+        # -------------------------------------------------
+        # plot individual traces per trial
+        axes[0, 1].plot(times_tr, diams_all[0], c='k', alpha=0.05)
+        if not np.isnan(times_all[n]):
+            tr_curr = n - tr_start
+            axes[0, 1].plot(
+                times_tr[:tr_curr + 1], diams_tr[0][tr_start:n + 1], c=colors[0], linewidth=4)
+        axes[0, 1].axvline(x=0, label='Feedback Onset', linestyle='--', c='b')
+        axes[0, 1].set_title(labels[0])
+        axes[0, 1].set_xticks([-0.5, 0, 0.5, 1, 1.5])
+        axes[0, 1].set_xlabel('Time [s]')
+        axes[0, 1].set_ylabel('Pupil diameter relative to\ntrial mean [pix]')
+        axes[0, 1].set_ylim([mn, mx])
+        axes[0, 1].legend(loc='upper right', frameon=False)
+
+        # ------------------------
+        # lp traces
+        # ------------------------
+        # plot individual traces per trial
+        axes[0, 2].plot(times_tr, diams_all[1], c='k', alpha=0.05)
+        if not np.isnan(times_all[n]):
+            axes[0, 2].plot(
+                times_tr[:tr_curr + 1], diams_tr[1][tr_start:n + 1], c=colors[1], linewidth=4)
+        axes[0, 2].axvline(x=0, label='Feedback Onset', linestyle='--', c='b')
+        axes[0, 2].set_title(labels[1])
+        axes[0, 2].set_xticks([-0.5, 0, 0.5, 1, 1.5])
+        axes[0, 2].set_xlabel('Time [s]')
+        axes[0, 2].set_ylim([mn, mx])
+
+        plt.savefig(
+            os.path.join(tmp_dir, 'frame_%06i.jpeg' % n), dpi=288, bbox_inches='tight')
+
+    save_video(save_file, tmp_dir, framerate, frame_pattern='frame_%06i.jpeg')
+
+
 def save_video(save_file, tmp_dir, framerate=20, frame_pattern='frame_%06d.jpeg'):
     """
 
