@@ -39,8 +39,8 @@ def pca(S, n_comps):
 base_path = '/media/cat/cole/ibl-paw_ensembling/'
 video_name = '032ffcdf-7692-40b3-b9ff-8def1fc18b2e'
 paw = 'left'
-s = 2 #smoothing param
-quantile_keep_pca = 25
+s = 2 #smoothing param, Ranges from 2-10 (needs more exploration)
+quantile_keep_pca = 25 #percentage of the points are kept for multi-view PCA (lowest ensemble variance)
 
 keypoint_names = ['paw_l', 'paw_r']
 markers_list_left_cam = []
@@ -57,10 +57,11 @@ for i in range(num_models):
         markers_tmp_right_cam = convert_lp_dlc(markers_tmp_right_cam, keypoint_names)
     markers_list_left_cam.append(markers_tmp_left_cam)
     #switch right camera paws
-    paw_l_x, paw_l_y, paw_l_likelihood = markers_tmp_right_cam['paw_l_x'].copy(), markers_tmp_right_cam['paw_l_y'].copy(), markers_tmp_right_cam['paw_l_likelihood'].copy()
-    paw_r_x, paw_r_y, paw_r_likelihood = markers_tmp_right_cam['paw_r_x'].copy(), markers_tmp_right_cam['paw_r_y'].copy(), markers_tmp_right_cam['paw_r_likelihood'].copy()
-    markers_tmp_right_cam['paw_l_x'], markers_tmp_right_cam['paw_l_y'], markers_tmp_right_cam['paw_l_likelihood'] = paw_r_x, paw_r_y, paw_r_likelihood
-    markers_tmp_right_cam['paw_r_x'], markers_tmp_right_cam['paw_r_y'], markers_tmp_right_cam['paw_r_likelihood'] = paw_l_x, paw_l_y, paw_l_likelihood
+    markers_tmp_right_cam = markers_tmp_right_cam.rename(columns={'paw_l_x': 'paw_r_x', 'paw_l_y': 'paw_r_y', 'paw_l_likelihood': 'paw_r_likelihood', 'paw_r_x': 'paw_l_x', 'paw_r_y': 'paw_l_y', 'paw_r_likelihood': 'paw_l_likelihood'})
+    # paw_l_x, paw_l_y, paw_l_likelihood = markers_tmp_right_cam['paw_l_x'].copy(), markers_tmp_right_cam['paw_l_y'].copy(), markers_tmp_right_cam['paw_l_likelihood'].copy()
+    # paw_r_x, paw_r_y, paw_r_likelihood = markers_tmp_right_cam['paw_r_x'].copy(), markers_tmp_right_cam['paw_r_y'].copy(), markers_tmp_right_cam['paw_r_likelihood'].copy()
+    # markers_tmp_right_cam['paw_l_x'], markers_tmp_right_cam['paw_l_y'], markers_tmp_right_cam['paw_l_likelihood'] = paw_r_x, paw_r_y, paw_r_likelihood
+    # markers_tmp_right_cam['paw_r_x'], markers_tmp_right_cam['paw_r_y'], markers_tmp_right_cam['paw_r_likelihood'] = paw_l_x, paw_l_y, paw_l_likelihood
     markers_list_right_cam.append(markers_tmp_right_cam)
 time_stamps_left_cam = np.load(os.path.join(base_path, f'{video_name}.timestamps.left.npy'))
 time_stamps_right_cam = np.load(os.path.join(base_path, f'{video_name}.timestamps.right.npy'))
@@ -117,7 +118,7 @@ right_cam_ensemble_preds, right_cam_ensemble_vars, right_cam_ensemble_stacks, ri
 ensemble_stacked = np.median(markers_list_stacked_interp, 0)
 ensemble_stacked_vars = np.var(markers_list_stacked_interp, 0)
 
-#filter by low ensemble variances
+#keep percentage of the points for multi-view PCA based lowest ensemble variance
 hstacked_vars = np.hstack((left_cam_ensemble_vars, right_cam_ensemble_vars))
 max_vars = np.max(hstacked_vars,1)
 good_frames = np.where(max_vars <= np.percentile(max_vars, quantile_keep_pca))[0]
@@ -127,6 +128,7 @@ good_right_cam_ensemble_preds = right_cam_ensemble_preds[good_frames]
 good_left_cam_ensemble_vars = left_cam_ensemble_vars[good_frames]
 good_right_cam_ensemble_vars = right_cam_ensemble_vars[good_frames]
 
+#stack left and right camera predictions and variances for both paws on all the good frames
 good_stacked_ensemble_preds = np.zeros((good_frames.shape[0]*2, left_cam_ensemble_preds.shape[1]))
 good_stacked_ensemble_vars = np.zeros((good_frames.shape[0]*2, left_cam_ensemble_vars.shape[1]))
 i, j = 0, 0
@@ -138,16 +140,16 @@ while i < good_right_cam_ensemble_preds.shape[0]:
     good_stacked_ensemble_vars[j] = np.concatenate((good_left_cam_ensemble_vars[i][2:4], good_right_cam_ensemble_vars[i][2:4]))
     i += 1
     j += 1
-    
+
+
+#combine left and right camera predictions and variances for both paws
 left_paw_ensemble_preds = np.zeros((left_cam_ensemble_preds.shape[0], left_cam_ensemble_preds.shape[1]))
 right_paw_ensemble_preds = np.zeros((right_cam_ensemble_preds.shape[0], right_cam_ensemble_preds.shape[1]))
+left_paw_ensemble_vars = np.zeros((left_cam_ensemble_vars.shape[0], left_cam_ensemble_vars.shape[1]))
+right_paw_ensemble_vars = np.zeros((right_cam_ensemble_vars.shape[0], right_cam_ensemble_vars.shape[1]))
 for i in range(len(left_cam_ensemble_preds)):
     left_paw_ensemble_preds[i] = np.concatenate((left_cam_ensemble_preds[i][:2], right_cam_ensemble_preds[i][:2]))
     right_paw_ensemble_preds[i] = np.concatenate((left_cam_ensemble_preds[i][2:4], right_cam_ensemble_preds[i][2:4]))
-    
-left_paw_ensemble_vars = np.zeros((left_cam_ensemble_vars.shape[0], left_cam_ensemble_vars.shape[1]))
-right_paw_ensemble_vars = np.zeros((right_cam_ensemble_vars.shape[0], right_cam_ensemble_vars.shape[1]))
-for i in range(len(left_cam_ensemble_vars)):
     left_paw_ensemble_vars[i] = np.concatenate((left_cam_ensemble_vars[i][:2], right_cam_ensemble_vars[i][:2]))
     right_paw_ensemble_vars[i] = np.concatenate((left_cam_ensemble_vars[i][2:4], right_cam_ensemble_vars[i][2:4]))
     
