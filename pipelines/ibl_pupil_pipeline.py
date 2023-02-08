@@ -8,6 +8,9 @@
 
 """
 
+from one.api import ONE
+import os
+
 from diagnostics.paper_ibl import PupilPipeline
 
 # ----------------------------
@@ -124,6 +127,8 @@ model_dirs = {
 # ----------------------------
 # run pipeline
 # ----------------------------
+one = ONE()
+
 error_log = {}
 for e, eid in enumerate(eids):
 

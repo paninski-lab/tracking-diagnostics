@@ -135,6 +135,7 @@ dmypy.json
 scratch/
 sandbox/
 *~
+lightning_logs/*
 
 daart/paths.py
 rick-configs-1/

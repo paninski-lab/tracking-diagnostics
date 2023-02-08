@@ -16,8 +16,18 @@ import os
 import pandas as pd
 from pathlib import Path
 from sklearn import linear_model as lm
+import subprocess
 
 from diagnostics.ensemble_kalman_filter import filtering_pass, smooth_backward, ensemble_median
+
+# camera constants (from Michael Schartner)
+FOCAL_LENGTH_MM = 16
+SENSOR_SIZE = 12.7
+IMG_WIDTH = 640
+IMG_HEIGHT = 512
+
+# downsampling factor used for paw inference
+DS_FACTOR = 5
 
 WINDOW_LAG = -0.4
 conda_script = '/home/mattw/anaconda3/etc/profile.d/conda.sh'
@@ -111,7 +121,7 @@ class Pipeline(object):
             f'--data_dir {data_dir} ' + \
             f'--model_dir {model_dir} ' + \
             f'--video_file {video_file} ' + \
-            f'--pred_csv_file {pred_csv_file}' + \
+            f'--pred_csv_file {pred_csv_file} ' + \
             f'--gpu_id {gpu_id} '
 
         subprocess.run(['/bin/bash', '-c', call_str], check=True)
@@ -190,6 +200,38 @@ class Pipeline(object):
                 pseudo_ids=pseudo_ids,
                 dlc_dict=dlc_dict,
                 **params)
+
+    @staticmethod
+    def _compute_peth(trials, align_event, view, times, feature_vals, feature_name):
+
+        # windows aligned to align_event
+        start_window, end_window = plt_window(trials[align_event])
+        start_idx = insert_idx(times, start_window)
+        end_idx = np.array(start_idx + int(WINDOW_LEN * SAMPLING[view]), dtype='int64')
+
+        # add feature to trials_df
+        trials[feature_name] = [
+            feature_vals[start_idx[i]:end_idx[i]] for i in range(len(start_idx))]
+
+        # need to expand the series of lists into a dataframe first, for the nan skipping to work
+        feedbackType = trials['feedbackType']
+        correct = trials[feedbackType == 1][feature_name]
+        incorrect = trials[feedbackType == -1][feature_name]
+        correct_vals = pd.DataFrame.from_dict(dict(zip(correct.index, correct.values)))
+        correct_peth = correct_vals.mean(axis=1)
+        incorrect_vals = pd.DataFrame.from_dict(dict(zip(incorrect.index, incorrect.values)))
+        incorrect_peth = incorrect_vals.mean(axis=1)
+
+        return {
+            'times': np.arange(len(correct_peth)) / SAMPLING[view] + WINDOW_LAG,
+            'start_idx': start_idx,
+            'end_idx': end_idx,
+            'trials': trials,
+            'correct_peth': correct_peth.to_numpy(),
+            'incorrect_peth': incorrect_peth.to_numpy(),
+            'correct_traces': correct_vals.to_numpy(),  # shape (trial_len, n_correct_trials)
+            'incorrect_traces': incorrect_vals.to_numpy(),
+        }
 
     def smooth_kalman(self, **kwargs):
         raise NotImplementedError
@@ -497,37 +539,16 @@ class PupilPipeline(Pipeline):
         camera_times = self.sess_loader.pupil['times'].to_numpy()
 
         # get trials data
-        trials = self.sess_loader.trials.loc[:, ['stimOn_times', 'feedback_times', 'feedbackType']]
+        cols_to_keep = ['stimOn_times', 'feedback_times', 'feedbackType']
+        trials = self.sess_loader.trials.loc[:, cols_to_keep]
         trials = trials.dropna()
         trials = trials.drop(trials[(trials['feedback_times'] - trials['stimOn_times']) > 10].index)
 
-        # windows aligned to align_event
-        start_window, end_window = plt_window(trials[align_event])
-        start_idx = insert_idx(camera_times, start_window)
-        end_idx = np.array(start_idx + int(WINDOW_LEN * SAMPLING[self.view]), dtype='int64')
+        peth_dict = self._compute_peth(
+            trials=trials, align_event=align_event, view=self.view, times=camera_times,
+            feature_vals=pupil_diam, feature_name='pupil')
 
-        # add pupil to trials_df
-        trials['pupil'] = [pupil_diam[start_idx[i]:end_idx[i]] for i in range(len(start_idx))]
-
-        # need to expand the series of lists into a dataframe first, for the nan skipping to work
-        feedbackType = trials['feedbackType']
-        correct = trials[feedbackType == 1]['pupil']
-        incorrect = trials[feedbackType == -1]['pupil']
-        correct_vals = pd.DataFrame.from_dict(dict(zip(correct.index, correct.values)))
-        correct_peth = correct_vals.mean(axis=1).to_numpy()
-        incorrect_vals = pd.DataFrame.from_dict(dict(zip(incorrect.index, incorrect.values)))
-        incorrect_peth = incorrect_vals.mean(axis=1).to_numpy()
-
-        return {
-            'trials': trials,
-            'start_idxs': start_idx,
-            'end_idxs': end_idx,
-            'correct_peth': correct_peth,
-            'incorrect_peth': incorrect_peth,
-            'correct_traces': correct_vals.to_numpy(),  # shape (trial_len, n_correct_trials)
-            'incorrect_traces': incorrect_vals.to_numpy(),
-            'times': np.arange(len(correct_peth)) / SAMPLING[self.view] + WINDOW_LAG
-        }
+        return peth_dict
 
 
 class PawPipeline(Pipeline):
@@ -564,17 +585,41 @@ class PawPipeline(Pipeline):
     def get_target_data(self, **kwargs):
         raise NotImplementedError
 
-    # TODO
-    def load_markers(self):
-        pass
+    def load_markers(self, tracker, tracker_name, rng_seed):
+        if tracker == 'dlc':
+            dlc_df = self.sess_loader.pose[f'{self.view}Camera']
+            # downsample
+            for kp in self.keypoint_names:
+                dlc_df[f'{kp}_x'] /= (DS_FACTOR * RESOLUTION[self.view])
+                dlc_df[f'{kp}_y'] /= (DS_FACTOR * RESOLUTION[self.view])
+        elif tracker == 'lp':
+            dlc_df = get_formatted_df(
+                self.pred_csv_file(rng_seed), self.keypoint_names, tracker=tracker_name)
+        elif tracker == 'lp+ks':
+            dlc_df = get_formatted_df(
+                self.kalman_markers_file, self.keypoint_names, tracker='ensemble-kalman_tracker')
+        return dlc_df
 
     # TODO
     def load_paw_speed(self):
         pass
 
-    # TODO
-    def compute_peth(self):
-        pass
+    def compute_peth(self, paw_speed, camera_times, align_event='firstMovement_times'):
+
+        # assume everything is aligned to left view timestamps for now
+        view = 'left'
+
+        # get trials data
+        cols_to_keep = ['stimOn_times', 'feedback_times', 'feedbackType', 'firstMovement_times']
+        trials = self.sess_loader.trials.loc[:, cols_to_keep]
+        trials = trials.dropna()
+        trials = trials.drop(trials[(trials['feedback_times'] - trials['stimOn_times']) > 10].index)
+
+        peth_dict = self._compute_peth(
+            trials=trials, align_event=align_event, view=view, times=camera_times,
+            feature_vals=paw_speed, feature_name='paw_speed')
+
+        return peth_dict
 
 
 class Video(object):
