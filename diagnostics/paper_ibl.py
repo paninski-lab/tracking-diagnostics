@@ -15,10 +15,14 @@ from one.api import ONE
 import os
 import pandas as pd
 from pathlib import Path
+from scipy import interpolate
 from sklearn import linear_model as lm
+from sklearn.decomposition import PCA
 import subprocess
 
-from diagnostics.ensemble_kalman_filter import filtering_pass, smooth_backward, ensemble_median
+from diagnostics.ensemble_kalman_filter import ensemble_kalman_smoother_pupil
+from diagnostics.ensemble_kalman_filter import ensemble_kalman_smoother_paw_asynchronous
+
 
 # camera constants (from Michael Schartner)
 FOCAL_LENGTH_MM = 16
@@ -29,7 +33,10 @@ IMG_HEIGHT = 512
 # downsampling factor used for paw inference
 DS_FACTOR = 5
 
+# peth computation/plotting info
 WINDOW_LAG = -0.4
+
+# local info
 conda_script = '/home/mattw/anaconda3/etc/profile.d/conda.sh'
 conda_env = 'pose'
 
@@ -130,7 +137,7 @@ class Pipeline(object):
 
     def decode_wrapper(self, results_dir, params, trackers, tracker_name, rng_seed):
 
-        # perform decoding on original eid (-1 entry) and NO pseudo-sessions
+        # perform decoding on original eid (-1 entry) and NO pseudo-sessions (positive ints)
         pseudo_ids = np.array([-1])
 
         # update paths
@@ -139,15 +146,16 @@ class Pipeline(object):
         params['neuralfit_path'] = Path(results_dir)
         params['neuralfit_path'].mkdir(parents=True, exist_ok=True)
 
+        # load all bwm session info
         bwm_df = bwm_query(self.one, freeze='2022_10_bwm_release')
 
-        # When merging probes we are interested in eids, not pids
+        # when merging probes we are interested in eids, not pids
         tmp_df = bwm_df.set_index(['eid', 'subject']).xs(self.eid, level='eid')
         subject = tmp_df.index[0]
         pids = tmp_df['pid'].to_list()  # Select all probes of this session
         probe_names = tmp_df['probe_name'].to_list()
 
-        # create mask
+        # create trial mask
         trials_df, trials_mask = load_trials_and_mask(
             one=self.one, eid=self.eid, sess_loader=self.sess_loader,
             min_rt=params['min_rt'], max_rt=params['max_rt'],
@@ -189,7 +197,7 @@ class Pipeline(object):
             params['add_to_saving_path'] = f'{tracker}'
 
             # load target data
-            dlc_dict = self.get_target_data(tracker, tracker_name, rng_seed)
+            dlc_dict = self.get_target_data(tracker, tracker_name, rng_seed, params['target'])
 
             # perform full nested xv decoding
             fit_eid(
@@ -224,8 +232,8 @@ class Pipeline(object):
 
         return {
             'times': np.arange(len(correct_peth)) / SAMPLING[view] + WINDOW_LAG,
-            'start_idx': start_idx,
-            'end_idx': end_idx,
+            'start_idxs': start_idx,
+            'end_idxs': end_idx,
             'trials': trials,
             'correct_peth': correct_peth.to_numpy(),
             'incorrect_peth': incorrect_peth.to_numpy(),
@@ -323,142 +331,23 @@ class PupilPipeline(Pipeline):
             print(f'{preds_csv_file} already exists; skipping')
             return preds_csv_file, latents_csv_file
 
-        # run smoothing
+        # load markers and compute initial pupil diameter
         markers_list = []
-        diams = []
         for rng_seed, model_dir in model_dirs.items():
             csv_file = self.pred_csv_file(rng_seed)
             markers_tmp = get_formatted_df(csv_file, self.keypoint_names, tracker=tracker_name)
-            diams_tmp = get_pupil_diameter(markers_tmp)
             markers_list.append(markers_tmp)
-            diams.append(diams_tmp)
 
-        # compute ensemble median
-        keys = ['pupil_top_r_x', 'pupil_top_r_y', 'pupil_bottom_r_x', 'pupil_bottom_r_y',
-                'pupil_right_r_x', 'pupil_right_r_y', 'pupil_left_r_x', 'pupil_left_r_y']
-        ensemble_preds, ensemble_vars, ensemble_stacks, keypoints_mean_dict, keypoints_var_dict, keypoints_stack_dict = ensemble_median(
-            markers_list, keys)
+        # run ks
+        df_dict = ensemble_kalman_smoother_pupil(markers_list, tracker_name)
 
-        # # Kalman Filtering + Smoothing
-        # $z_t = (d_t, x_t, y_t)$
-        # $z_t = A z_{t-1} + e_t, e_t ~ N(0,E)$
-        # $O_t = B z_t + n_t, n_t ~ N(0,D_t)$
+        # save smoothed markers
+        os.makedirs(os.path.dirname(preds_csv_file), exist_ok=True)
+        df_dict['markers_df'].to_csv(preds_csv_file)
 
-        # ## Set parameters
-        # compute center of mass
-        pupil_locations = get_pupil_location(keypoints_mean_dict)
-        pupil_diameters = get_pupil_diameter(keypoints_mean_dict)
-        diameters = []
-        for i in range(n_models):
-            keypoints_dict = keypoints_stack_dict[i]
-            diameter = get_pupil_diameter(keypoints_dict)
-            diameters.append(diameter)
-
-        mean_x_obs = np.mean(pupil_locations[:, 0])
-        mean_y_obs = np.mean(pupil_locations[:, 1])
-        # make the mean zero
-        x_t_obs, y_t_obs = pupil_locations[:, 0] - mean_x_obs, pupil_locations[:, 1] - mean_y_obs
-
-        # latent variables (observed)
-        # latent variables - diameter, com_x, com_y
-        # z_t_obs = np.vstack((pupil_diameters, x_t_obs, y_t_obs))
-
-        # --------------------------------------
-        # Set values for kalman filter
-        # --------------------------------------
-        # initial state: mean
-        m0 = np.asarray([np.mean(pupil_diameters), 0.0, 0.0])
-
-        # diagonal: var
-        S0 = np.asarray([
-            [np.var(pupil_diameters), 0.0, 0.0],
-            [0.0, np.var(x_t_obs), 0.0],
-            [0.0, 0.0, np.var(y_t_obs)]
-        ])
-
-        # state-transition matrix, parameters hand-picked for smoothing purposes
-        A = np.asarray([[.9999, 0, 0], [0, .999, 0], [0, 0, .999]])
-
-        # state covariance matrix
-        Q = np.asarray([
-            [np.var(pupil_diameters) * (1 - (A[0, 0] ** 2)), 0, 0],
-            [0, np.var(x_t_obs) * (1 - A[1, 1] ** 2), 0],
-            [0, 0, np.var(y_t_obs) * (1 - (A[2, 2] ** 2))]
-        ])
-
-        # Measurement function
-        C = np.asarray(
-            [[0, 1, 0], [-.5, 0, 1], [0, 1, 0], [.5, 0, 1], [.5, 1, 0], [0, 0, 1], [-.5, 1, 0], [0, 0, 1]])
-
-        # placeholder diagonal matrix for ensemble variance
-        R = np.eye(8)
-
-        scaled_ensemble_preds = ensemble_preds.copy()
-        scaled_ensemble_stacks = ensemble_stacks.copy()
-        # subtract COM means from the ensemble predictions
-        for i in range(ensemble_preds.shape[1]):
-            if i % 2 == 0:
-                scaled_ensemble_preds[:, i] -= mean_x_obs
-            else:
-                scaled_ensemble_preds[:, i] -= mean_y_obs
-        # subtract COM means from all the predictions
-        for i in range(ensemble_preds.shape[1]):
-            if i % 2 == 0:
-                scaled_ensemble_stacks[:, :, i] -= mean_x_obs
-            else:
-                scaled_ensemble_stacks[:, :, i] -= mean_y_obs
-        y = scaled_ensemble_preds
-
-        # --------------------------------------
-        # perform filtering
-        # --------------------------------------
-        # do filtering pass with time-varying ensemble variances
-        print("filtering...")
-        mf, Vf, S = filtering_pass(y, m0, S0, C, R, A, Q, ensemble_vars)
-        print("done filtering")
-
-        # --------------------------------------
-        # perform smoothing
-        # --------------------------------------
-        # Do the smoothing step
-        print("smoothing...")
-        ms, Vs, _ = smooth_backward(y, mf, Vf, S, A, Q, C)
-        print("done smoothing")
-        # Smoothed posterior over y
-        y_m_smooth = np.dot(C, ms.T).T
-        y_v_smooth = np.swapaxes(np.dot(C, np.dot(Vs, C.T)), 0, 1)
-
-        # --------------------------------------
-        # cleanup
-        # --------------------------------------
-        # save out marker info
-        pdindex = make_dlc_pandas_index(keypoint_names)
-        processed_arr_dict = add_mean_to_array(y_m_smooth, keys, mean_x_obs, mean_y_obs)
-        key_pair_list = [['pupil_top_r_x', 'pupil_top_r_y'],
-                         ['pupil_right_r_x', 'pupil_right_r_y'],
-                         ['pupil_bottom_r_x', 'pupil_bottom_r_y'],
-                         ['pupil_left_r_x', 'pupil_left_r_y']]
-        pred_arr = []
-        for key_pair in key_pair_list:
-            pred_arr.append(processed_arr_dict[key_pair[0]])
-            pred_arr.append(processed_arr_dict[key_pair[1]])
-            var = np.empty(processed_arr_dict[key_pair[0]].shape)
-            var[:] = np.nan
-            pred_arr.append(var)
-        pred_arr = np.asarray(pred_arr)
-        df = pd.DataFrame(pred_arr.T, columns=pdindex)
-        df.to_csv(preds_csv_file)
-
-        # save out latents info: pupil diam, center of mass
-        pred_arr2 = []
-        pred_arr2.append(ms[:, 0])
-        pred_arr2.append(ms[:, 1] + mean_x_obs)  # add back x mean of pupil location
-        pred_arr2.append(ms[:, 2] + mean_y_obs)  # add back y mean of pupil location
-        pred_arr2 = np.asarray(pred_arr2)
-        arrays = [[tracker_name, tracker_name, tracker_name], ['diameter', 'com_x', 'com_y']]
-        pd_index2 = pd.MultiIndex.from_arrays(arrays, names=('scorer', 'latent'))
-        df2 = pd.DataFrame(pred_arr2.T, columns=pd_index2)
-        df2.to_csv(latents_csv_file)
+        # save latents info: pupil diam, center of mass
+        os.makedirs(os.path.dirname(latents_csv_file), exist_ok=True)
+        df_dict['latents_df'].to_csv(latents_csv_file)
 
         return preds_csv_file, latents_csv_file
 
@@ -573,17 +462,62 @@ class PawPipeline(Pipeline):
         if base_dir:
             self.paths.paw_csv_dir = os.path.join(base_dir, 'paw_preds')
 
-    # TODO
-    def smooth_kalman(self, **kwargs):
-        raise NotImplementedError
+    def decode(
+            self, paw, date, trackers, tracker_name, rng_seed, align_event='firstMovement_times',
+            results_dir=None):
 
-    # TODO
-    def decode(self, **kwargs):
-        raise NotImplementedError
+        if results_dir is None:
+            results_dir = self.paths.decoding_dir
 
-    # TODO
-    def get_target_data(self, **kwargs):
-        raise NotImplementedError
+        # update params
+        params['date'] = date
+        params['target'] = f'{self.view}_cam_{paw}'
+        params['tanh_transform'] = False  # only True for target=='signcont'
+        params['align_time'] = align_event
+        params['time_window'] = (-0.2, 1.0)  # relative to 'align_time'
+        params['binsize'] = 0.02
+        params['n_bins_lag'] = 10
+        params['n_runs'] = 1
+        params['single_region'] = False  # False to combine clusers across all regions
+        params['save_binned'] = False
+        params['estimator'] = lm.Ridge
+        params['hyperparam_grid'] = {'alpha': np.array([1e-1, 1e0, 1e1, 1e2, 1e3, 1e4, 1e5])}
+        params['imposter_df'] = None  # need to update this later if we do statistical controls
+
+        self.decode_wrapper(results_dir, params, trackers, tracker_name, rng_seed)
+
+    def get_target_data(self, tracker, tracker_name, rng_seed, target):
+        """Load paw speed."""
+
+        # select view
+        if tracker == 'dlc':
+            camera = self.view
+        elif tracker == 'lp':
+            camera = self.view
+        elif tracker == 'lp+ks':
+            # kalman outputs always at resolution of left camera
+            camera = 'left'
+
+        # load times
+        times = self.sess_loader.pose[f'{camera}Camera']['times'].to_numpy()
+        # load poses
+        poses = self.load_markers(tracker, tracker_name, rng_seed)
+        # compute speed for desired feature
+        # NOTE: this feature references the name in the pose dataframes; the actual limb this
+        # refers to is limb-dependent
+        # view=left, feature=paw_l: left paw
+        # view=left, feature=paw_r: right paw
+        # view=right, feature=paw_l: right paw
+        # view=right, feature=paw_r: left paw
+        if target.find('paw_l') > -1:
+            feature = 'paw_l'
+        elif target.find('paw_r') > -1:
+            feature = 'paw_r'
+        else:
+            raise NotImplementedError
+        vals = get_speed(poses, times, camera=camera, feature=feature)
+
+        return {'times': times, 'value': vals, 'skip': False}
 
     def load_markers(self, tracker, tracker_name, rng_seed):
         if tracker == 'dlc':
@@ -592,6 +526,10 @@ class PawPipeline(Pipeline):
             for kp in self.keypoint_names:
                 dlc_df[f'{kp}_x'] /= (DS_FACTOR * RESOLUTION[self.view])
                 dlc_df[f'{kp}_y'] /= (DS_FACTOR * RESOLUTION[self.view])
+            # flip horizontally
+            if self.view == 'right':
+                for kp in self.keypoint_names:
+                    dlc_df[f'{kp}_x'] = IMG_WIDTH / DS_FACTOR - dlc_df[f'{kp}_x']
         elif tracker == 'lp':
             dlc_df = get_formatted_df(
                 self.pred_csv_file(rng_seed), self.keypoint_names, tracker=tracker_name)
@@ -599,10 +537,6 @@ class PawPipeline(Pipeline):
             dlc_df = get_formatted_df(
                 self.kalman_markers_file, self.keypoint_names, tracker='ensemble-kalman_tracker')
         return dlc_df
-
-    # TODO
-    def load_paw_speed(self):
-        pass
 
     def compute_peth(self, paw_speed, camera_times, align_event='firstMovement_times'):
 
@@ -620,6 +554,114 @@ class PawPipeline(Pipeline):
             feature_vals=paw_speed, feature_name='paw_speed')
 
         return peth_dict
+
+
+class MultiviewPawPipeline(object):
+
+    def __init__(self, eid, one, likelihood_thr=0.9, base_dir=None):
+
+        self.eid = eid
+        self.one = one
+
+        self.pipes = {
+            v: PawPipeline(
+                eid=eid, one=one, view=v, likelihood_thr=likelihood_thr, base_dir=base_dir
+            ) for v in ['left', 'right']}
+
+        self.keypoint_names = ['paw_l', 'paw_r']
+        self.views = ['left', 'right']
+
+        # copy paths from one of the single-view pipeline objects
+        self.paths = self.pipes['left'].paths
+
+    def kalman_latents_file(self, view):
+        return os.path.join(
+            self.paths.kalman_save_dir, f'latents.kalman_smoothed.{self.eid}.{view}.csv')
+
+    def kalman_markers_file(self, view):
+        return os.path.join(
+            self.paths.kalman_save_dir, f'markers.kalman_smoothed.{self.eid}.{view}.csv')
+
+    def timestamps_file(self, view):
+        return os.path.join(self.paths.alyx_session_path, 'alf', f'_ibl_{view}Camera.times.npy')
+
+    def smooth_kalman(
+            self, preds_csv_files, model_dirs, tracker_name, timestamp_files=None,
+            overwrite=False):
+
+        # check to make sure predictions exist
+        all_exist = True
+        for rng_seed, model_dir in model_dirs.items():
+            for view in self.views:
+                csv_file = self.pipes[view].pred_csv_file(rng_seed)
+                all_exist &= os.path.exists(csv_file)
+        if not all_exist:
+            raise FileNotFoundError(f'did not find all prediction files in {model_dirs}')
+
+        # check to see if smoothing has already beeen run
+        all_exist = True
+        for view, file in preds_csv_files.items():
+            if os.path.exists(file) and not overwrite:
+                pass
+            else:
+                all_exist = False
+        if all_exist:
+            print(f'{file} already exists; skipping')
+            return preds_csv_files
+
+        # collect markers across ensemble members from both views
+        markers_list_l_cam = []
+        markers_list_r_cam = []
+        for rng_seed, model_dir in model_dirs.items():
+            # load markers from this ensemble member
+            csv_file_l = self.pipes['left'].pred_csv_file(rng_seed)
+            markers_tmp_l_cam = get_formatted_df(
+                csv_file_l, self.keypoint_names, tracker=tracker_name)
+            csv_file_r = self.pipes['right'].pred_csv_file(rng_seed)
+            markers_tmp_r_cam = get_formatted_df(
+                csv_file_r, self.keypoint_names, tracker=tracker_name)
+
+            # append to ensemble list
+            markers_list_l_cam.append(markers_tmp_l_cam)
+            # switch right camera paws
+            columns = {
+                'paw_l_x': 'paw_r_x', 'paw_l_y': 'paw_r_y',
+                'paw_l_likelihood': 'paw_r_likelihood',
+                'paw_r_x': 'paw_l_x', 'paw_r_y': 'paw_l_y',
+                'paw_r_likelihood': 'paw_l_likelihood'
+            }
+            markers_tmp_r_cam = markers_tmp_r_cam.rename(columns=columns)
+            # reorder
+            markers_tmp_r_cam = markers_tmp_r_cam.loc[:, columns.keys()]
+            markers_list_r_cam.append(markers_tmp_r_cam)
+
+        # collect timestamps from both views
+        if timestamp_files is None:
+            # load from ibl database
+            timestamps_l_cam = np.load(self.timestamps_file('left'))
+            timestamps_r_cam = np.load(self.timestamps_file('right'))
+        else:
+            # assume dict
+            timestamps_l_cam = np.load(timestamp_files['left'])
+            timestamps_r_cam = np.load(timestamp_files['right'])
+
+        # run ks
+        df_dict = ensemble_kalman_smoother_paw_asynchronous(
+            markers_list_left_cam=markers_list_l_cam,
+            markers_list_right_cam=markers_list_r_cam,
+            timestamps_left_cam=timestamps_l_cam,
+            timestamps_right_cam=timestamps_r_cam,
+        )
+
+        # save smoothed markers from left view
+        os.makedirs(os.path.dirname(preds_csv_files['left']), exist_ok=True)
+        df_dict['left_df'].to_csv(preds_csv_files['left'])
+
+        # save smoothed markers from right view
+        os.makedirs(os.path.dirname(preds_csv_files['right']), exist_ok=True)
+        df_dict['right_df'].to_csv(preds_csv_files['right'])
+
+        return preds_csv_files
 
 
 class Video(object):
@@ -710,6 +752,9 @@ class Paths(object):
         self.alyx_session_path = None
 
 
+# -----------------------
+# general funcs
+# -----------------------
 def get_formatted_df(filename, keypoint_names, tracker='heatmap_tracker'):
     dlc_df_ = pd.read_csv(filename, header=[0, 1, 2], index_col=0)
     dlc_df = {}
@@ -719,49 +764,24 @@ def get_formatted_df(filename, keypoint_names, tracker='heatmap_tracker'):
     return pd.DataFrame(dlc_df, index=dlc_df_.index)
 
 
-def get_pupil_location(dlc_df):
-    """get mean of both pupil diameters
-    d1 = top - bottom, d2 = left - right
-    and in addition assume it's a circle and
-    estimate diameter from other pairs of points
-    Author: Michael Schartner
+def get_speed(dlc, dlc_t, camera, feature='paw_r'):
     """
-    s = 1
-    t = np.vstack((dlc_df['pupil_top_r_x'], dlc_df['pupil_top_r_y'])).T / s
-    b = np.vstack((dlc_df['pupil_bottom_r_x'], dlc_df['pupil_bottom_r_y'])).T / s
-    l = np.vstack((dlc_df['pupil_left_r_x'], dlc_df['pupil_left_r_y'])).T / s
-    r = np.vstack((dlc_df['pupil_right_r_x'], dlc_df['pupil_right_r_y'])).T / s
-    center = np.zeros(t.shape)
+    :param dlc: dlc pqt table
+    :param dlc_t: dlc time points
+    :param camera: camera type e.g 'left', 'right', 'body'
+    :param feature: dlc feature to compute speed over
+    :return:
+    """
+    x = dlc[f'{feature}_x']
+    y = dlc[f'{feature}_y']
 
-    # ok if either top or bottom is nan in x-dir
-    tmp_x1 = np.nanmedian(np.hstack([t[:, 0, None], b[:, 0, None]]), axis=1)
-    # both left and right must be present in x-dir
-    tmp_x2 = np.median(np.hstack([r[:, 0, None], l[:, 0, None]]), axis=1)
-    center[:, 0] = np.nanmedian(np.hstack([tmp_x1[:, None], tmp_x2[:, None]]), axis=1)
+    # get speed in px/sec [half res]
+    s = ((np.diff(x) ** 2 + np.diff(y) ** 2) ** .5) * SAMPLING[camera]
 
-    # both top and bottom must be present in y-dir
-    tmp_y1 = np.median(np.hstack([t[:, 1, None], b[:, 1, None]]), axis=1)
-    # ok if either left or right is nan in y-dir
-    tmp_y2 = np.nanmedian(np.hstack([r[:, 1, None], l[:, 1, None]]), axis=1)
-    center[:, 1] = np.nanmedian(np.hstack([tmp_y1[:, None], tmp_y2[:, None]]), axis=1)
-    return center
+    dt = np.diff(dlc_t)
+    tv = dlc_t[:-1] + dt / 2
 
-
-def add_mean_to_array(pred_arr, keys, mean_x, mean_y):
-    pred_arr_copy = pred_arr.copy()
-    processed_arr_dict = {}
-    for i, key in enumerate(keys):
-        if 'x' in key:
-            processed_arr_dict[key] = pred_arr_copy[:, i] + mean_x
-        else:
-            processed_arr_dict[key] = pred_arr_copy[:, i] + mean_y
-    return processed_arr_dict
-
-
-def make_dlc_pandas_index(keypoint_names):
-    xyl_labels = ["x", "y", "likelihood"]
-    pdindex = pd.MultiIndex.from_product(
-        [["%s_tracker" % 'ensemble-kalman'], keypoint_names, xyl_labels],
-        names=["scorer", "bodyparts", "coords"],
-    )
-    return pdindex
+    # interpolate over original time scale
+    if tv.size > 1:
+        ifcn = interpolate.interp1d(tv, s, fill_value="extrapolate")
+        return ifcn(dlc_t)

@@ -182,8 +182,8 @@ def make_labeled_video_wrapper(
 
 
 def make_labeled_video_peths(
-        save_file, cap, points, diams_tr, diams_all, times_tr, times_all,
-        idxs=None, labels=None, likelihood_thresh=0.05,
+        save_file, cap, points, features_tr, features_all, times_tr, times_all,
+        align_event_label, feature_label='feature', idxs=None, labels=None, likelihood_thresh=0.05,
         max_frames=None, markersize=6, framerate=20, height=4):
     """Behavioral video overlaid with markers.
 
@@ -218,8 +218,8 @@ def make_labeled_video_peths(
     w = h * (img_width / img_height)
     fig, axes = plt.subplots(1, 3, figsize=(w + 2.4 * w, h), squeeze=False)
 
-    mn = np.nanpercentile(diams_all[0], 0.1)
-    mx = np.nanpercentile(diams_all[0], 98)
+    mn = np.nanpercentile(features_all[0], 0.1)
+    mx = np.nanpercentile(features_all[0], 98)
 
     for a, ax in enumerate(axes[0]):
         ax.set_yticks([])
@@ -230,10 +230,10 @@ def make_labeled_video_peths(
     axes[0, 2].spines['right'].set_visible(False)
 
     # add some text so tight_layout works properly; only need to call once
-    axes[0, 1].set_xlabel('Time [s]')
-    axes[0, 1].set_ylabel('Pupil diameter relative to\ntrial mean[pix]')
+    axes[0, 1].set_xlabel('Time (s)')
+    axes[0, 1].set_ylabel(feature_label)
     axes[0, 1].set_title(labels[0])
-    axes[0, 2].set_xlabel('Time [s]')
+    axes[0, 2].set_xlabel('Time (s)')
     axes[0, 2].set_title(labels[1])
     plt.tight_layout()
 
@@ -300,16 +300,16 @@ def make_labeled_video_peths(
         # dlc traces
         # -------------------------------------------------
         # plot individual traces per trial
-        axes[0, 1].plot(times_tr, diams_all[0], c='k', alpha=0.05)
+        axes[0, 1].plot(times_tr, features_all[0], c='k', alpha=0.05)
         if not np.isnan(times_all[n]):
             tr_curr = n - tr_start
             axes[0, 1].plot(
-                times_tr[:tr_curr + 1], diams_tr[0][tr_start:n + 1], c=colors[0], linewidth=4)
-        axes[0, 1].axvline(x=0, label='Feedback Onset', linestyle='--', c='b')
+                times_tr[:tr_curr + 1], features_tr[0][tr_start:n + 1], c=colors[0], linewidth=4)
+        axes[0, 1].axvline(x=0, label=align_event_label, linestyle='--', c='b')
         axes[0, 1].set_title(labels[0])
         axes[0, 1].set_xticks([-0.5, 0, 0.5, 1, 1.5])
-        axes[0, 1].set_xlabel('Time [s]')
-        axes[0, 1].set_ylabel('Pupil diameter relative to\ntrial mean [pix]')
+        axes[0, 1].set_xlabel('Time (s)')
+        axes[0, 1].set_ylabel(feature_label)
         axes[0, 1].set_ylim([mn, mx])
         axes[0, 1].legend(loc='upper right', frameon=False)
 
@@ -317,11 +317,11 @@ def make_labeled_video_peths(
         # lp traces
         # ------------------------
         # plot individual traces per trial
-        axes[0, 2].plot(times_tr, diams_all[1], c='k', alpha=0.05)
+        axes[0, 2].plot(times_tr, features_all[1], c='k', alpha=0.05)
         if not np.isnan(times_all[n]):
             axes[0, 2].plot(
-                times_tr[:tr_curr + 1], diams_tr[1][tr_start:n + 1], c=colors[1], linewidth=4)
-        axes[0, 2].axvline(x=0, label='Feedback Onset', linestyle='--', c='b')
+                times_tr[:tr_curr + 1], features_tr[1][tr_start:n + 1], c=colors[1], linewidth=4)
+        axes[0, 2].axvline(x=0, label=align_event_label, linestyle='--', c='b')
         axes[0, 2].set_title(labels[1])
         axes[0, 2].set_xticks([-0.5, 0, 0.5, 1, 1.5])
         axes[0, 2].set_xlabel('Time [s]')

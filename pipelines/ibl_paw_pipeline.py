@@ -10,7 +10,7 @@
 from one.api import ONE
 import os
 
-from diagnostics.paper_ibl import PawPipeline
+from diagnostics.paper_ibl import PawPipeline, MultiviewPawPipeline
 
 # ----------------------------
 # pipeline user options
@@ -42,9 +42,9 @@ pipe_kwargs = {
     'reencode_video': {
         'run': False, 'kwargs': {'overwrite': False}},
     'infer_video': {
-        'run': True, 'kwargs': {'overwrite': False, 'gpu_id': gpu_id}},
+        'run': False, 'kwargs': {'overwrite': False, 'gpu_id': gpu_id}},
     'smooth_kalman': {
-        'run': False, 'kwargs': {'overwrite': False, 'tracker_name': tracker_name}},
+        'run': True, 'kwargs': {'overwrite': False, 'tracker_name': tracker_name}},
     'decode': {
         'run': False,
         'kwargs': {
@@ -73,7 +73,7 @@ eids = [
     '158d5d35-a2ab-4a76-87b0-51048c5d5283',  # 1/4
     '7622da34-51b6-4661-98ae-a57d40806008',  # 1/4
     'e012d3e3-fdbc-4661-9ffa-5fa284e4e706',  # 1/4
-    '30af8629-7b96-45b7-8778-374720ddbc5e',  # ?/4; bad tracking (bright fur)
+    # '30af8629-7b96-45b7-8778-374720ddbc5e',  # ?/4; bad tracking (bright fur)  # TIMESTAMPS
     '66d98e6e-bcd9-4e78-8fbb-636f7e808b29',  # 1/4
     'f9860a11-24d3-452e-ab95-39e199f20a93',  # 1/4; holds paw on far side, lots of missing data
     'd0ea3148-948d-4817-94f8-dcaf2342bbbe',  # 1/4
@@ -86,30 +86,30 @@ eids = [
     # random
     '6c6b0d06-6039-4525-a74b-58cfaa1d3a60',  # paw in holder, a bit noisy
     'ae8787b1-4229-4d56-b0c2-566b61a25b77',  # should really be warning/fail
-    # '69a0e953-a643-4f0e-bb26-dc65af3ea7d7',  # false negative? occasional wire occlusions
-    # '1ec23a70-b94b-4e9c-a0df-8c2151da3761',  # overlap: false negative? don't see low likelihoods
-    # 'a7763417-e0d6-4f2a-aa55-e382fd9b5fb8',  # paw far to side of holder, lost tracking
-    # '19e66dc9-bf9f-430b-9d6a-acfa85de6fb7',
-    # 'bb099402-fb31-4cfd-824e-1c97530a0875',
-    # '1e45d992-c356-40e1-9be1-a506d944896f',
-    # 'ee212778-3903-4f5b-ac4b-a72f22debf03',  # lots of grooming
-    # '64e3fb86-928c-4079-865c-b364205b502e',
-    # '034e726f-b35f-41e0-8d6c-a22cc32391fb',
-    # '6364ff7f-6471-415a-ab9e-632a12052690',
-    # '16c3667b-e0ea-43fb-9ad4-8dcd1e6c40e1',
-    # '15f742e1-1043-45c9-9504-f1e8a53c1744',
-    # 'aa3432cd-62bd-40bc-bc1c-a12d53bcbdcf',
-    # 'c3d9b6fb-7fa9-4413-a364-92a54df0fc5d',
-    # '90e524a2-aa63-47ce-b5b8-1b1941a1223a',
-    # '746d1902-fa59-4cab-b0aa-013be36060d5',
-    # '72cb5550-43b4-4ef0-add5-e4adfdfb5e02',
-    # '7416f387-b302-4ca3-8daf-03b585a1b7ec',
-    # '1425bd6f-c625-4f6a-b237-dc5bcfc42c87',
-    # 'd901aff5-2250-467a-b4a1-0cb9729df9e2',
-    # '0f77ca5d-73c2-45bd-aa4c-4c5ed275dbde',
-    # 'd2832a38-27f6-452d-91d6-af72d794136c',
-    # 'e349a2e7-50a3-47ca-bc45-20d1899854ec',
-    # '5adab0b7-dfd0-467d-b09d-43cb7ca5d59c',
+    '69a0e953-a643-4f0e-bb26-dc65af3ea7d7',  # false negative? occasional wire occlusions
+    '1ec23a70-b94b-4e9c-a0df-8c2151da3761',  # overlap: false negative? don't see low likelihoods
+    'a7763417-e0d6-4f2a-aa55-e382fd9b5fb8',  # paw far to side of holder, lost tracking
+    '19e66dc9-bf9f-430b-9d6a-acfa85de6fb7',
+    'bb099402-fb31-4cfd-824e-1c97530a0875',
+    '1e45d992-c356-40e1-9be1-a506d944896f',
+    'ee212778-3903-4f5b-ac4b-a72f22debf03',  # lots of grooming
+    '64e3fb86-928c-4079-865c-b364205b502e',
+    '034e726f-b35f-41e0-8d6c-a22cc32391fb',
+    '6364ff7f-6471-415a-ab9e-632a12052690',
+    '16c3667b-e0ea-43fb-9ad4-8dcd1e6c40e1',
+    '15f742e1-1043-45c9-9504-f1e8a53c1744',
+    'aa3432cd-62bd-40bc-bc1c-a12d53bcbdcf',
+    'c3d9b6fb-7fa9-4413-a364-92a54df0fc5d',
+    '90e524a2-aa63-47ce-b5b8-1b1941a1223a',
+    '746d1902-fa59-4cab-b0aa-013be36060d5',
+    '72cb5550-43b4-4ef0-add5-e4adfdfb5e02',
+    '7416f387-b302-4ca3-8daf-03b585a1b7ec',
+    '1425bd6f-c625-4f6a-b237-dc5bcfc42c87',
+    'd901aff5-2250-467a-b4a1-0cb9729df9e2',
+    '0f77ca5d-73c2-45bd-aa4c-4c5ed275dbde',
+    'd2832a38-27f6-452d-91d6-af72d794136c',
+    'e349a2e7-50a3-47ca-bc45-20d1899854ec',
+    '5adab0b7-dfd0-467d-b09d-43cb7ca5d59c',
 ]
 
 # ----------------------------
@@ -127,64 +127,86 @@ model_dirs = {
 # run single-view pipeline
 # ----------------------------
 one = ONE()
-views = ['right', 'left']
-error_log_single = {}
-for e, eid in enumerate(eids):
-    for view in views:
-        pipe = PawPipeline(eid=eid, one=one, view=view, base_dir=base_dir)
-        print(f'eid {e}: {eid} ({view})')
+
+if pipe_kwargs['reencode_video']['run'] or pipe_kwargs['infer_video']['run']:
+    views = ['right', 'left']
+    error_log_single = {}
+    for e, eid in enumerate(eids):
+        for view in views:
+            pipe = PawPipeline(eid=eid, one=one, view=view, base_dir=base_dir)
+            print(f'eid {e}: {eid} ({view})')
+            print(pipe.paths.alyx_session_path)
+            try:
+                # re-encode video into yuv420p format need for lightning pose
+                if pipe_kwargs['reencode_video']['run']:
+                    pipe.reencode_video(**pipe_kwargs['reencode_video']['kwargs'])
+                # run inference on video for each ensemble member
+                if pipe_kwargs['infer_video']['run']:
+                    for rng_seed, model_dir in model_dirs.items():
+                        pred_csv_file = pipe.pred_csv_file(rng_seed)
+                        pipe.infer_video(
+                            model_dir=model_dir, data_dir=data_dir, pred_csv_file=pred_csv_file,
+                            **pipe_kwargs['infer_video']['kwargs'])
+            except Exception as exception:
+                error_log_single[f'{eid}_{view}'] = exception
+
+    print('single-view pipeline finished')
+    for key, val in error_log_single.items():
+        print(f'{key}: {val}\n')
+
+# ----------------------------
+# run multi-view pipeline
+# ----------------------------
+if pipe_kwargs['smooth_kalman']['run']:
+    error_log_multi = {}
+    for e, eid in enumerate(eids):
+        pipe = MultiviewPawPipeline(eid=eid, one=one, base_dir=base_dir)
+        print(f'eid {e}: {eid}')
         print(pipe.paths.alyx_session_path)
-        # try:
-        # re-encode video into yuv420p format need for lightning pose
-        if pipe_kwargs['reencode_video']['run']:
-            pipe.reencode_video(**pipe_kwargs['reencode_video']['kwargs'])
-        # run inference on video for each ensemble member
-        if pipe_kwargs['infer_video']['run']:
-            for rng_seed, model_dir in model_dirs.items():
-                pred_csv_file = pipe.pred_csv_file(rng_seed)
-                pipe.infer_video(
-                    model_dir=model_dir, data_dir=data_dir, pred_csv_file=pred_csv_file,
-                    **pipe_kwargs['infer_video']['kwargs'])
-        # except Exception as exception:
-        #     error_log_single[f'{eid}_{view}'] = exception
+        try:
+            # smooth results using ensemble kalman smoother
+            if pipe_kwargs['smooth_kalman']['run']:
+                pipe.smooth_kalman(
+                    preds_csv_files={
+                        'left': pipe.kalman_markers_file(view='left'),
+                        'right': pipe.kalman_markers_file(view='right'),
+                    },
+                    model_dirs=model_dirs,
+                    **pipe_kwargs['smooth_kalman']['kwargs']
+                )
+        except Exception as exception:
+            error_log_multi[eid] = exception
 
-print('single-view pipeline finished')
-print(error_log_single)
+    print('multi-view pipeline finished')
+    for key, val in error_log_multi.items():
+        print(f'{key}: {val}\n')
 
-# # ----------------------------
-# # run multi-view pipeline
-# # ----------------------------
-# error_log_multi = {}
-# for e, eid in enumerate(eids):
-#     pipe = PawPipeline(eid=eid, one=one, base_dir=base_dir)
-#     print(f'eid {e}: {eid}')
-#     print(pipe.paths.alyx_session_path)
-#     try:
-#         # smooth results using ensemble kalman smoother
-#         if pipe_kwargs['smooth_kalman']['run']:
-#             pipe.smooth_kalman(
-#                 preds_csv_file=pipe.kalman_markers_file, latents_csv_file=pipe.kalman_latents_file,
-#                 model_dirs=model_dirs, **pipe_kwargs['smooth_kalman']['kwargs'])
-#     except Exception as exception:
-#         error_log_multi[eid] = exception
-#
-# print('multi-view pipeline finished')
-# print(error_log_multi)
-#
-# # ----------------------------
-# # run decoding pipeline
-# # ----------------------------
-# error_log_decode = {}
-# for e, eid in enumerate(eids):
-#     pipe = PawPipeline(eid=eid, one=one, base_dir=base_dir)
-#     print(f'eid {e}: {eid}')
-#     print(pipe.paths.alyx_session_path)
-#     try:
-#         # decode paw speed from simultaneously recorded neural activity
-#         if pipe_kwargs['decode']['run']:
-#             pipe.decode(**pipe_kwargs['decode']['kwargs'])
-#     except Exception as exception:
-#         error_log_decode[eid] = exception
-#
-# print('decoding pipeline finished')
-# print(error_log_decode)
+# ----------------------------
+# run decoding pipeline
+# ----------------------------
+if pipe_kwargs['decode']['run']:
+    error_log_decode = {}
+    for e, eid in enumerate(eids):
+        print(f'eid {e}: {eid}')
+
+        # decode left paw from left view (paw_r)
+        pipe = PawPipeline(eid=eid, one=one, view='left', base_dir=base_dir)
+        print(pipe.paths.alyx_session_path)
+        try:
+            if pipe_kwargs['decode']['run']:
+                pipe.decode(paw='paw_r', **pipe_kwargs['decode']['kwargs'])
+        except Exception as exception:
+            error_log_decode[f'{eid}_left'] = exception
+
+        # decode right paw from right view (paw_r, note feature name is not switched - on purpose)
+        pipe = PawPipeline(eid=eid, one=one, view='right', base_dir=base_dir)
+        print(pipe.paths.alyx_session_path)
+        try:
+            if pipe_kwargs['decode']['run']:
+                pipe.decode(paw='paw_r', **pipe_kwargs['decode']['kwargs'])
+        except Exception as exception:
+            error_log_decode[f'{eid}_left'] = exception
+
+    print('decoding pipeline finished')
+    for key, val in error_log_decode.items():
+        print(f'{key}: {val}\n')
