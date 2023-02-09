@@ -139,3 +139,4 @@ lightning_logs/*
 
 daart/paths.py
 rick-configs-1/
+pipelines/ibl_paw_pipeline1.py

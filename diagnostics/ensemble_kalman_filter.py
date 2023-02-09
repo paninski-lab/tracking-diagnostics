@@ -1,7 +1,9 @@
 from brainbox.behavior.dlc import get_pupil_diameter
 from collections import defaultdict
 import numpy as np
+import pandas as pd
 from scipy.interpolate import interp1d
+from sklearn.decomposition import PCA
 
 
 # -----------------------
@@ -391,8 +393,8 @@ def pca(S, n_comps):
 
 def ensemble_kalman_smoother_paw_asynchronous(
         markers_list_left_cam, markers_list_right_cam, timestamps_left_cam,
-        timestamps_right_cam, smooth_param=2, quantile_keep_pca=25):
-    """
+        timestamps_right_cam, keypoint_names, smooth_param=2, quantile_keep_pca=25):
+    """Use multi-view constraints to fit a 3d latent subspace for each body part.
 
     Parameters
     ----------
@@ -404,6 +406,8 @@ def ensemble_kalman_smoother_paw_asynchronous(
         same length as dfs in markers_list_left_cam
     timestamps_right_cam : np.array
         same length as dfs in markers_list_right_cam
+    keypoint_names : list
+        list of names in the order they appear in marker dfs
     smooth_param : float
         ranges from 2-10 (needs more exploration)
     quantile_keep_pca
@@ -572,13 +576,13 @@ def ensemble_kalman_smoother_paw_asynchronous(
         # Set values for kalman filter
         # --------------------------------------
         if paw == 'left':
-            save_keypoint_name = self.keypoint_names[0]
+            save_keypoint_name = keypoint_names[0]
             good_ensemble_pcs = good_ensemble_pcs_left_paw
             ensemble_vars = left_paw_ensemble_vars
             y = scaled_left_paw_ensemble_preds
             ensemble_stacks = scaled_left_paw_ensemble_stacks
         else:
-            save_keypoint_name = self.keypoint_names[1]
+            save_keypoint_name = keypoint_names[1]
             good_ensemble_pcs = good_ensemble_pcs_right_paw
             ensemble_vars = right_paw_ensemble_vars
             y = scaled_right_paw_ensemble_preds
@@ -651,7 +655,7 @@ def ensemble_kalman_smoother_paw_asynchronous(
     # --------------------------------------
     # final cleanup
     # --------------------------------------
-    pdindex = make_dlc_pandas_index(self.keypoint_names)
+    pdindex = make_dlc_pandas_index(keypoint_names)
 
     # make left cam dataframe
     pred_arr = np.hstack([

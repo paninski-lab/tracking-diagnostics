@@ -10,14 +10,12 @@ from brainwidemap.decoding.functions.utils import get_save_path
 from brainwidemap.decoding.settings_template import params
 import cv2
 import numpy as np
-import one.alf.io as alfio
 from one.api import ONE
 import os
 import pandas as pd
 from pathlib import Path
 from scipy import interpolate
 from sklearn import linear_model as lm
-from sklearn.decomposition import PCA
 import subprocess
 
 from diagnostics.ensemble_kalman_filter import ensemble_kalman_smoother_pupil
@@ -651,6 +649,7 @@ class MultiviewPawPipeline(object):
             markers_list_right_cam=markers_list_r_cam,
             timestamps_left_cam=timestamps_l_cam,
             timestamps_right_cam=timestamps_r_cam,
+            keypoint_names=self.keypoint_names,
         )
 
         # save smoothed markers from left view
