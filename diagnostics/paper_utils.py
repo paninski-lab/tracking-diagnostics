@@ -380,6 +380,9 @@ def plot_traces_and_metrics(
 
     # plot likelihoods
     for c, model_type in enumerate(models_to_compare):
+        mask = get_trace_mask(
+            df_video_preds, video_name=vid_name,
+            train_frames=train_frames, model_type=model_type, rng_seed=rng_seed)
         fig_traces.add_trace(
             go.Scatter(
                 name=model_type,
@@ -707,7 +710,9 @@ def generate_report_labeled(dataset_name, df_save_dir, fig_save_dir, file_ext='p
 
 
 def generate_report_video(
-        dataset_name, df_save_dir, fig_save_dir, rng_seed, time_window=None, file_ext='png'):
+        dataset_name, df_save_dir, fig_save_dir, rng_seed, time_window=None, file_ext='png',
+        models_to_compare=['baseline', 'semi-super context'], train_frames_list=['75', '1'],
+        df_save_dir_dlc=None):
 
     sns.set_style('white')
 
@@ -715,14 +720,24 @@ def generate_report_video(
         os.path.join(df_save_dir, "%s_video_preds.pqt" % dataset_name))
     df_video_metrics = pd.read_parquet(
         os.path.join(df_save_dir, "%s_video_metrics.pqt" % dataset_name))
+    if 'dlc' in models_to_compare:
+        df_video_preds = pd.concat([
+            df_video_preds,
+            pd.read_parquet(
+                os.path.join(df_save_dir_dlc, "%s_video_preds_dlc.pqt" % dataset_name))
+        ])
+        df_video_metrics = pd.concat([
+            df_video_metrics,
+            pd.read_parquet(
+                os.path.join(df_save_dir_dlc, "%s_video_metrics_dlc.pqt" % dataset_name))
+        ])
     df_video_metrics_gr = df_video_metrics.groupby([
         'metric', 'video_name', 'model_path', 'rng_seed_data_pt', 'train_frames', 'model_type']
     ).mean().reset_index().set_index('video_name')
 
     # plot basic metrics for each model type
     keypoint = 'mean'
-    models_to_compare = ['baseline', 'semi-super context']
-    for train_frames in ['75', '1']:
+    for train_frames in train_frames_list:
         train_frame_str = 'full train frames' if train_frames == '1' \
             else '%s train frames' % train_frames
         title = 'Video results on %s dataset (%s)' % (dataset_name, train_frame_str)
@@ -743,7 +758,7 @@ def generate_report_video(
             ]:
                 continue
             else:
-                for train_frames in ['75', '1']:
+                for train_frames in train_frames_list:
                     save_file = os.path.join(
                         fig_save_dir, 'video_traces_keypoint=%s_trainframes=%s_vid=%s.%s' % (
                             keypoint, train_frames, vid_name, file_ext))

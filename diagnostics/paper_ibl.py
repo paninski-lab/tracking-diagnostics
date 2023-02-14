@@ -9,6 +9,7 @@ from brainwidemap.decoding.functions.process_targets import load_behavior
 from brainwidemap.decoding.functions.utils import get_save_path
 from brainwidemap.decoding.settings_template import params
 import cv2
+from neurodsp.smooth import smooth_interpolate_savgol
 import numpy as np
 from one.api import ONE
 import os
@@ -20,6 +21,7 @@ import subprocess
 
 from diagnostics.ensemble_kalman_filter import ensemble_kalman_smoother_pupil
 from diagnostics.ensemble_kalman_filter import ensemble_kalman_smoother_paw_asynchronous
+from diagnostics.ensemble_kalman_filter import get_pupil_location
 
 
 # camera constants (from Michael Schartner)
@@ -49,7 +51,7 @@ class Pipeline(object):
         # keep session loader on hand for easy loading
         self.sess_loader = SessionLoader(self.one, self.eid)
         self.sess_loader.load_trials()
-        self.sess_loader.load_pose(views=[self.view], likelihood_thr=likelihood_thr)
+        self.sess_loader.load_pose(views=['left', 'right'], likelihood_thr=likelihood_thr)
 
         self.processed_video_name = None  # set by children classes
 
@@ -162,19 +164,15 @@ class Pipeline(object):
         params['trials_mask_diagnostics'] = [trials_mask]
 
         # load spike sorting data, merge across probes
-        if data[self.eid]['spikes'] is None:
-            clusters_list = []
-            spikes_list = []
-            for pid, probe_name in zip(pids, probe_names):
-                tmp_spikes, tmp_clusters = load_good_units(
-                    self.one, pid, eid=self.eid, pname=probe_name)
-                tmp_clusters['pid'] = pid
-                spikes_list.append(tmp_spikes)
-                clusters_list.append(tmp_clusters)
-            spikes, clusters = merge_probes(spikes_list, clusters_list)
-        else:
-            spikes = data[self.eid]['spikes']
-            clusters = data[self.eid]['clusters']
+        clusters_list = []
+        spikes_list = []
+        for pid, probe_name in zip(pids, probe_names):
+            tmp_spikes, tmp_clusters = load_good_units(
+                self.one, pid, eid=self.eid, pname=probe_name)
+            tmp_clusters['pid'] = pid
+            spikes_list.append(tmp_spikes)
+            clusters_list.append(tmp_clusters)
+        spikes, clusters = merge_probes(spikes_list, clusters_list)
 
         # put everything into the input format fit_eid still expects at this point
         neural_dict = {
@@ -500,7 +498,15 @@ class PawPipeline(Pipeline):
         times = self.sess_loader.pose[f'{camera}Camera']['times'].to_numpy()
         # load poses
         poses = self.load_markers(tracker, tracker_name, rng_seed)
-        # compute speed for desired feature
+
+        len_times = times.shape[0]
+        len_poses = poses.shape[0]
+        if len_times != len_poses:
+            print(f'WARNING! timestamp length {len_times}, pose length, {len_poses}')
+            if len_poses > len_times:
+                raise ValueError('Poses longer than timestamps, do not know how to proceed')
+            times = times[:len_poses]
+
         # NOTE: this feature references the name in the pose dataframes; the actual limb this
         # refers to is limb-dependent
         # view=left, feature=paw_l: left paw
@@ -513,9 +519,28 @@ class PawPipeline(Pipeline):
             feature = 'paw_r'
         else:
             raise NotImplementedError
+
+        # # linearly interpolate through dropped points
+        # for coord in ['x', 'y']:
+        #     c = poses[f'{feature}_{coord}'].to_numpy()
+        #     if np.any(np.isnan(c)):
+        #         mask = ~np.isnan(c)
+        #         ifcn = interpolate.interp1d(times[mask], c[mask], fill_value="extrapolate")
+        #         tmp = ifcn(times)
+        #         poses.loc[:, f'{feature}_{coord}'] = tmp
+
+        # apply light smoothing
+        window = 13 if camera == 'right' else 7
+        x_raw = poses[f'{feature}_x'].to_numpy()
+        x_smooth = smooth_interpolate_savgol(x_raw, window=window, order=3, interp_kind='linear')
+        y_raw = poses[f'{feature}_y'].to_numpy()
+        y_smooth = smooth_interpolate_savgol(y_raw, window=window, order=3, interp_kind='linear')
+        poses = pd.DataFrame({f'{feature}_x': x_smooth, f'{feature}_y': y_smooth})
+
+        # compute speed for desired feature
         vals = get_speed(poses, times, camera=camera, feature=feature)
 
-        return {'times': times, 'value': vals, 'skip': False}
+        return {'times': times, 'values': vals, 'skip': False}
 
     def load_markers(self, tracker, tracker_name, rng_seed):
         if tracker == 'dlc':
@@ -542,7 +567,8 @@ class PawPipeline(Pipeline):
         view = 'left'
 
         # get trials data
-        cols_to_keep = ['stimOn_times', 'feedback_times', 'feedbackType', 'firstMovement_times']
+        cols_to_keep = [
+            'stimOn_times', 'feedback_times', 'feedbackType', 'firstMovement_times', 'choice']
         trials = self.sess_loader.trials.loc[:, cols_to_keep]
         trials = trials.dropna()
         trials = trials.drop(trials[(trials['feedback_times'] - trials['stimOn_times']) > 10].index)
@@ -642,6 +668,11 @@ class MultiviewPawPipeline(object):
             # assume dict
             timestamps_l_cam = np.load(timestamp_files['left'])
             timestamps_r_cam = np.load(timestamp_files['right'])
+
+        if timestamps_l_cam.shape[0] != markers_list_l_cam[0].shape[0]:
+            raise ValueError('left camera timestamp misalignment')
+        if timestamps_r_cam.shape[0] != markers_list_r_cam[0].shape[0]:
+            raise ValueError('right camera timestamp misalignment')
 
         # run ks
         df_dict = ensemble_kalman_smoother_paw_asynchronous(

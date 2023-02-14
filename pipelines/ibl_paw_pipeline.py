@@ -44,13 +44,14 @@ pipe_kwargs = {
     'infer_video': {
         'run': False, 'kwargs': {'overwrite': False, 'gpu_id': gpu_id}},
     'smooth_kalman': {
-        'run': True, 'kwargs': {'overwrite': False, 'tracker_name': tracker_name}},
+        'run': False, 'kwargs': {'overwrite': False, 'tracker_name': tracker_name}},
     'decode': {
-        'run': False,
+        'run': True,
         'kwargs': {
             # 'overwrite': False,
             'tracker_name': tracker_name,
-            'trackers': ['lp', 'lp+ks'],  # 'dlc' | 'lp' | 'lp+ks'
+            'trackers': ['dlc', 'lp', 'lp+ks'],  # 'dlc' | 'lp' | 'lp+ks'
+            # 'trackers': ['lp+ks'],  # 'dlc' | 'lp' | 'lp+ks'
             'rng_seed': rng_seed,  # for 'lp' tracker
             'date': '02-02-2023',
         }},
@@ -61,53 +62,53 @@ pipe_kwargs = {
 # ----------------------------
 eids = [
     # new (fail/total)
-    '032ffcdf-7692-40b3-b9ff-8def1fc18b2e',  # 1/4; spout grabbing
-    '6ed57216-498d-48a6-b48b-a243a34710ea',  # 2/4
-    '91a3353a-2da1-420d-8c7c-fad2fedfdd18',  # 1/4; some issues
-    '8ca740c5-e7fe-430a-aa10-e74e9c3cbbe8',  # 1/4; ear errors
-    'a405053a-eb13-4aa4-850c-5a337e5dc7fd',  # 2/4; paw in holder, a bit noisy
-    '03d9a098-07bf-4765-88b7-85f8d8f620cc',  # 1/4
-    'e2b845a1-e313-4a08-bc61-a5f662ed295e',  # ?/4; false negative?
-    '8d316998-28c3-4265-b029-e2ca82375b2f',  # ?/4; dark, lots of bad/lost tracking
-    '1b715600-0cbc-442c-bd00-5b0ac2865de1',  # ?/4; very bad tracking, not sure why this is so bad
-    '158d5d35-a2ab-4a76-87b0-51048c5d5283',  # 1/4
-    '7622da34-51b6-4661-98ae-a57d40806008',  # 1/4
-    'e012d3e3-fdbc-4661-9ffa-5fa284e4e706',  # 1/4
-    # '30af8629-7b96-45b7-8778-374720ddbc5e',  # ?/4; bad tracking (bright fur)  # TIMESTAMPS
-    '66d98e6e-bcd9-4e78-8fbb-636f7e808b29',  # 1/4
-    'f9860a11-24d3-452e-ab95-39e199f20a93',  # 1/4; holds paw on far side, lots of missing data
-    'd0ea3148-948d-4817-94f8-dcaf2342bbbe',  # 1/4
-    '2c44a360-5a56-4971-8009-f469fb59de98',  # 1/4
-    'eebacd5a-7dcd-4ba6-9dff-ec2a4d2f19e0',  # 1/4
-    '27ef44c0-acb2-4220-b776-477d0d5abd35',  # 1/4
-    'dc21e80d-97d7-44ca-a729-a8e3f9b14305',  # 2/4; no tracking?? not sure why this is so bad
-    '58b1e920-cfc8-467e-b28b-7654a55d0977',  # 1/4; false negative? occasional wire occlusions
-    'e56541a5-a6d5-4750-b1fe-f6b5257bfe7c',  # 2/4; dark, paws often occluded, lost tracking
+    '032ffcdf-7692-40b3-b9ff-8def1fc18b2e',  # sync good
+    '6ed57216-498d-48a6-b48b-a243a34710ea',  # sync good
+    '91a3353a-2da1-420d-8c7c-fad2fedfdd18',  # sync good
+    '8ca740c5-e7fe-430a-aa10-e74e9c3cbbe8',  # sync good
+    'a405053a-eb13-4aa4-850c-5a337e5dc7fd',  # sync good
+    # '03d9a098-07bf-4765-88b7-85f8d8f620cc',  # SYNC BAD
+    # 'e2b845a1-e313-4a08-bc61-a5f662ed295e',  # SYNC BAD
+    # '8d316998-28c3-4265-b029-e2ca82375b2f',  # SYNC BAD
+    '1b715600-0cbc-442c-bd00-5b0ac2865de1',  # sync good
+    '158d5d35-a2ab-4a76-87b0-51048c5d5283',  # sync good
+    '7622da34-51b6-4661-98ae-a57d40806008',  #
+    'e012d3e3-fdbc-4661-9ffa-5fa284e4e706',  # sync good
+    # '30af8629-7b96-45b7-8778-374720ddbc5e',  # SYNC BAD
+    '66d98e6e-bcd9-4e78-8fbb-636f7e808b29',  #
+    'f9860a11-24d3-452e-ab95-39e199f20a93',  # sync good
+    'd0ea3148-948d-4817-94f8-dcaf2342bbbe',  # sync good
+    '2c44a360-5a56-4971-8009-f469fb59de98',  # sync good
+    'eebacd5a-7dcd-4ba6-9dff-ec2a4d2f19e0',  # sync good
+    '27ef44c0-acb2-4220-b776-477d0d5abd35',  # sync ???? (no mvmt in vid)
+    'dc21e80d-97d7-44ca-a729-a8e3f9b14305',  # sync ok (maybe off by a frame)
+    '58b1e920-cfc8-467e-b28b-7654a55d0977',  # sync good
+    'e56541a5-a6d5-4750-b1fe-f6b5257bfe7c',  # sync ???? (no mvmt in vid)
     # random
-    '6c6b0d06-6039-4525-a74b-58cfaa1d3a60',  # paw in holder, a bit noisy
-    'ae8787b1-4229-4d56-b0c2-566b61a25b77',  # should really be warning/fail
-    '69a0e953-a643-4f0e-bb26-dc65af3ea7d7',  # false negative? occasional wire occlusions
-    '1ec23a70-b94b-4e9c-a0df-8c2151da3761',  # overlap: false negative? don't see low likelihoods
-    'a7763417-e0d6-4f2a-aa55-e382fd9b5fb8',  # paw far to side of holder, lost tracking
-    '19e66dc9-bf9f-430b-9d6a-acfa85de6fb7',
-    'bb099402-fb31-4cfd-824e-1c97530a0875',
-    '1e45d992-c356-40e1-9be1-a506d944896f',
-    'ee212778-3903-4f5b-ac4b-a72f22debf03',  # lots of grooming
-    '64e3fb86-928c-4079-865c-b364205b502e',
+    '6c6b0d06-6039-4525-a74b-58cfaa1d3a60',  # sync good
+    'ae8787b1-4229-4d56-b0c2-566b61a25b77',  # sync good
+    '69a0e953-a643-4f0e-bb26-dc65af3ea7d7',  # sync good
+    # '1ec23a70-b94b-4e9c-a0df-8c2151da3761',  # SYNC BAD
+    'a7763417-e0d6-4f2a-aa55-e382fd9b5fb8',  # sync good
+    # '19e66dc9-bf9f-430b-9d6a-acfa85de6fb7',  # SYNC BAD
+    # 'bb099402-fb31-4cfd-824e-1c97530a0875',  # SYNC BAD
+    # '1e45d992-c356-40e1-9be1-a506d944896f',  # sync good; timestamps bad?
+    'ee212778-3903-4f5b-ac4b-a72f22debf03',  # sync good
+    '64e3fb86-928c-4079-865c-b364205b502e',  # sync good
     '034e726f-b35f-41e0-8d6c-a22cc32391fb',
-    '6364ff7f-6471-415a-ab9e-632a12052690',
-    '16c3667b-e0ea-43fb-9ad4-8dcd1e6c40e1',
+    '6364ff7f-6471-415a-ab9e-632a12052690',  # sync good
+    '16c3667b-e0ea-43fb-9ad4-8dcd1e6c40e1',  # sync good
     '15f742e1-1043-45c9-9504-f1e8a53c1744',
     'aa3432cd-62bd-40bc-bc1c-a12d53bcbdcf',
-    'c3d9b6fb-7fa9-4413-a364-92a54df0fc5d',
-    '90e524a2-aa63-47ce-b5b8-1b1941a1223a',
-    '746d1902-fa59-4cab-b0aa-013be36060d5',
+    'c3d9b6fb-7fa9-4413-a364-92a54df0fc5d',  # sync good
+    '90e524a2-aa63-47ce-b5b8-1b1941a1223a',  # sync good
+    '746d1902-fa59-4cab-b0aa-013be36060d5',  # sync good
     '72cb5550-43b4-4ef0-add5-e4adfdfb5e02',
     '7416f387-b302-4ca3-8daf-03b585a1b7ec',
-    '1425bd6f-c625-4f6a-b237-dc5bcfc42c87',
-    'd901aff5-2250-467a-b4a1-0cb9729df9e2',
-    '0f77ca5d-73c2-45bd-aa4c-4c5ed275dbde',
-    'd2832a38-27f6-452d-91d6-af72d794136c',
+    '1425bd6f-c625-4f6a-b237-dc5bcfc42c87',  # sync good
+    'd901aff5-2250-467a-b4a1-0cb9729df9e2',  # sync good
+    '0f77ca5d-73c2-45bd-aa4c-4c5ed275dbde',  # sync good
+    'd2832a38-27f6-452d-91d6-af72d794136c',  # sync good
     'e349a2e7-50a3-47ca-bc45-20d1899854ec',
     '5adab0b7-dfd0-467d-b09d-43cb7ca5d59c',
 ]
@@ -190,22 +191,22 @@ if pipe_kwargs['decode']['run']:
         print(f'eid {e}: {eid}')
 
         # decode left paw from left view (paw_r)
-        pipe = PawPipeline(eid=eid, one=one, view='left', base_dir=base_dir)
-        print(pipe.paths.alyx_session_path)
-        try:
-            if pipe_kwargs['decode']['run']:
-                pipe.decode(paw='paw_r', **pipe_kwargs['decode']['kwargs'])
-        except Exception as exception:
-            error_log_decode[f'{eid}_left'] = exception
+        # pipe = PawPipeline(eid=eid, one=one, view='left', base_dir=base_dir)
+        # print(pipe.paths.alyx_session_path)
+        # try:
+        #     if pipe_kwargs['decode']['run']:
+        #         pipe.decode(paw='paw_r', **pipe_kwargs['decode']['kwargs'])
+        # except Exception as exception:
+        #     error_log_decode[f'{eid}_left'] = exception
 
         # decode right paw from right view (paw_r, note feature name is not switched - on purpose)
         pipe = PawPipeline(eid=eid, one=one, view='right', base_dir=base_dir)
         print(pipe.paths.alyx_session_path)
-        try:
-            if pipe_kwargs['decode']['run']:
-                pipe.decode(paw='paw_r', **pipe_kwargs['decode']['kwargs'])
-        except Exception as exception:
-            error_log_decode[f'{eid}_left'] = exception
+        # try:
+        if pipe_kwargs['decode']['run']:
+            pipe.decode(paw='paw_r', **pipe_kwargs['decode']['kwargs'])
+        # except Exception as exception:
+        #     error_log_decode[f'{eid}_left'] = exception
 
     print('decoding pipeline finished')
     for key, val in error_log_decode.items():
