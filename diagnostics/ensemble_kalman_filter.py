@@ -245,6 +245,8 @@ def ensemble_kalman_smoother_pupil(markers_list, tracker_name):
     # $z_t = A z_{t-1} + e_t, e_t ~ N(0,E)$
     # $O_t = B z_t + n_t, n_t ~ N(0,D_t)$
 
+    n_models = len(markers_list)
+
     # ## Set parameters
     # compute center of mass
     pupil_locations = get_pupil_location(keypoints_mean_dict)
@@ -334,6 +336,7 @@ def ensemble_kalman_smoother_pupil(markers_list, tracker_name):
     # cleanup
     # --------------------------------------
     # save out marker info
+    keypoint_names = ['pupil_top_r', 'pupil_right_r', 'pupil_bottom_r', 'pupil_left_r']
     pdindex = make_dlc_pandas_index(keypoint_names)
     processed_arr_dict = add_mean_to_array(y_m_smooth, keys, mean_x_obs, mean_y_obs)
     key_pair_list = [['pupil_top_r_x', 'pupil_top_r_y'],

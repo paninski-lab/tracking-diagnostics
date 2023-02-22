@@ -1,6 +1,7 @@
 """Pipeline objects for analyzing ibl pupil and paw data in lightning pose paper."""
 
 from brainbox.behavior.dlc import plt_window, insert_idx, WINDOW_LEN, SAMPLING, RESOLUTION
+from brainbox.behavior.dlc import get_pupil_diameter, get_smooth_pupil_diameter
 from brainbox.io.one import SessionLoader
 from brainwidemap.bwm_loading import (
     bwm_query, load_good_units, load_trials_and_mask, merge_probes)
@@ -77,6 +78,26 @@ class Pipeline(object):
     def kalman_markers_file(self):
         return os.path.join(
             self.paths.kalman_save_dir, f'markers.kalman_smoothed.{self.eid}.{self.view}.csv')
+
+    def download_data(self, dataset_types=None):
+        """Download dlc markers and raw videos from flatiron.
+
+        Parameters
+        ----------
+        dataset_types : list, optional
+            dataset types to download; defaults to
+            ['_iblrig_camera.raw', 'camera.times', 'camera.dlc']
+
+        """
+
+        if dataset_types is None:
+            dataset_types = [
+                '_iblrig_%sCamera.raw.mp4' % self.view,  # raw videos
+                '_ibl_%sCamera.times.npy' % self.view,   # alf camera times
+                '_ibl_%sCamera.dlc.pqt' % self.view,     # alf dlc traces
+            ]
+        for dataset_type in dataset_types:
+            self.one.load_dataset(self.eid, dataset_type, download_only=True)
 
     def reencode_video(self, overwrite, video_file=None, **kwargs):
         """Re-encode video into yuv420p format needed for lightning pose."""
