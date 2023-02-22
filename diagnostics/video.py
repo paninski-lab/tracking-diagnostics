@@ -44,7 +44,7 @@ def get_frames_from_idxs(cap, idxs):
 
 
 def make_labeled_video(
-        save_file, cap, points, labels=None, likelihood_thresh=0.05, max_frames=None,
+        save_file, cap, points, labels=None, likelihood_thresh=0.9, max_frames=None,
         markersize=6, framerate=20, height=4):
     """Behavioral video overlaid with markers.
 
@@ -184,7 +184,7 @@ def make_labeled_video_wrapper(
 def make_labeled_video_peths(
         save_file, cap, points, features_tr, features_all, times_tr, times_all,
         align_event_label, feature_label='feature', idxs=None, labels=None, likelihood_thresh=0.05,
-        max_frames=None, markersize=6, framerate=20, height=4):
+        max_frames=None, markersize=6, framerate=20, height=3):
     """Behavioral video overlaid with markers.
 
     Parameters
@@ -289,8 +289,8 @@ def make_labeled_video_peths(
             if labels is not None:
                 for p, label_name in enumerate(labels):
                     # plot label string
-                    axes[0, 0].text(0.04, 0.04 + p * 0.05, label_name, color=colors[p],
-                                    **txt_kwargs)
+                    axes[0, 0].text(
+                        0.04, 0.04 + p * 0.09, label_name, color=colors[p], **txt_kwargs)
         axes[0, 0].set_xlim([0, frame.shape[3]])
         axes[0, 0].set_ylim([frame.shape[2], 0])
         axes[0, 0].set_yticks([])
@@ -324,7 +324,7 @@ def make_labeled_video_peths(
         axes[0, 2].axvline(x=0, label=align_event_label, linestyle='--', c='b')
         axes[0, 2].set_title(labels[1])
         axes[0, 2].set_xticks([-0.5, 0, 0.5, 1, 1.5])
-        axes[0, 2].set_xlabel('Time [s]')
+        axes[0, 2].set_xlabel('Time (s)')
         axes[0, 2].set_ylim([mn, mx])
 
         plt.savefig(

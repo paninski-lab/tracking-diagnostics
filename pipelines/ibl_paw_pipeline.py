@@ -72,16 +72,16 @@ eids = [
     # '8d316998-28c3-4265-b029-e2ca82375b2f',  # SYNC BAD
     '1b715600-0cbc-442c-bd00-5b0ac2865de1',  # sync good
     '158d5d35-a2ab-4a76-87b0-51048c5d5283',  # sync good
-    '7622da34-51b6-4661-98ae-a57d40806008',  #
+    '7622da34-51b6-4661-98ae-a57d40806008',  # sync ok (off by a frame or two)
     'e012d3e3-fdbc-4661-9ffa-5fa284e4e706',  # sync good
     # '30af8629-7b96-45b7-8778-374720ddbc5e',  # SYNC BAD
-    '66d98e6e-bcd9-4e78-8fbb-636f7e808b29',  #
+    '66d98e6e-bcd9-4e78-8fbb-636f7e808b29',  # sync ok (off by a frame or two)
     'f9860a11-24d3-452e-ab95-39e199f20a93',  # sync good
     'd0ea3148-948d-4817-94f8-dcaf2342bbbe',  # sync good
     '2c44a360-5a56-4971-8009-f469fb59de98',  # sync good
     'eebacd5a-7dcd-4ba6-9dff-ec2a4d2f19e0',  # sync good
     '27ef44c0-acb2-4220-b776-477d0d5abd35',  # sync ???? (no mvmt in vid)
-    'dc21e80d-97d7-44ca-a729-a8e3f9b14305',  # sync ok (maybe off by a frame)
+    'dc21e80d-97d7-44ca-a729-a8e3f9b14305',  # sync ok (off by a frame or two)
     '58b1e920-cfc8-467e-b28b-7654a55d0977',  # sync good
     'e56541a5-a6d5-4750-b1fe-f6b5257bfe7c',  # sync ???? (no mvmt in vid)
     # random
@@ -95,22 +95,22 @@ eids = [
     # '1e45d992-c356-40e1-9be1-a506d944896f',  # sync good; timestamps bad?
     'ee212778-3903-4f5b-ac4b-a72f22debf03',  # sync good
     '64e3fb86-928c-4079-865c-b364205b502e',  # sync good
-    '034e726f-b35f-41e0-8d6c-a22cc32391fb',
+    '034e726f-b35f-41e0-8d6c-a22cc32391fb',  # sync good
     '6364ff7f-6471-415a-ab9e-632a12052690',  # sync good
     '16c3667b-e0ea-43fb-9ad4-8dcd1e6c40e1',  # sync good
-    '15f742e1-1043-45c9-9504-f1e8a53c1744',
-    'aa3432cd-62bd-40bc-bc1c-a12d53bcbdcf',
+    '15f742e1-1043-45c9-9504-f1e8a53c1744',  # sync ok (off by a frame or two)
+    'aa3432cd-62bd-40bc-bc1c-a12d53bcbdcf',  # sync good
     'c3d9b6fb-7fa9-4413-a364-92a54df0fc5d',  # sync good
     '90e524a2-aa63-47ce-b5b8-1b1941a1223a',  # sync good
     '746d1902-fa59-4cab-b0aa-013be36060d5',  # sync good
-    '72cb5550-43b4-4ef0-add5-e4adfdfb5e02',
-    '7416f387-b302-4ca3-8daf-03b585a1b7ec',
+    '72cb5550-43b4-4ef0-add5-e4adfdfb5e02',  # sync good
+    '7416f387-b302-4ca3-8daf-03b585a1b7ec',  # sync good
     '1425bd6f-c625-4f6a-b237-dc5bcfc42c87',  # sync good
     'd901aff5-2250-467a-b4a1-0cb9729df9e2',  # sync good
     '0f77ca5d-73c2-45bd-aa4c-4c5ed275dbde',  # sync good
     'd2832a38-27f6-452d-91d6-af72d794136c',  # sync good
-    'e349a2e7-50a3-47ca-bc45-20d1899854ec',
-    '5adab0b7-dfd0-467d-b09d-43cb7ca5d59c',
+    'e349a2e7-50a3-47ca-bc45-20d1899854ec',  # sync ok (off by a frame or two)
+    '5adab0b7-dfd0-467d-b09d-43cb7ca5d59c',  # sync good
 ]
 
 # ----------------------------

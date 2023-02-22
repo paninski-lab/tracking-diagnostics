@@ -115,7 +115,8 @@ class Pipeline(object):
         # assume we are running inference on the standard video
         if video_file is None:
             video_file = os.path.join(
-                self.paths.alyx_session_path, 'raw_video_data', self.processed_video_name)
+                self.paths.alyx_session_path, 'raw_video_data',
+                self.processed_video_name.replace('.mp4', '_reencode.mp4'))
 
         # assumes commands are run from root directory of tracking-diagnostics
         inference_script = os.path.join(os.getcwd(), 'scripts', 'predict_video.py')
@@ -253,6 +254,7 @@ class PupilPipeline(Pipeline):
         super().__init__(
             eid=eid, one=one, view='left', base_dir=base_dir, likelihood_thr=likelihood_thr)
 
+        self.raw_video_name = '_iblrig_leftCamera.raw.mp4'
         self.processed_video_name = '_iblrig_leftCamera.cropped_brightened.mp4'
         self.keypoint_names = ['pupil_top_r', 'pupil_right_r', 'pupil_bottom_r', 'pupil_left_r']
 
@@ -261,9 +263,11 @@ class PupilPipeline(Pipeline):
         self._find_crop_params()
 
         # load video cap
+        video_file = os.path.join(
+            self.paths.alyx_session_path, 'raw_video_data', self.processed_video_name)
         self.video = Video()
-        self.video.load_video_cap(os.path.join(
-            self.paths.alyx_session_path, 'raw_video_data', self.processed_video_name))
+        if os.path.exists(video_file):
+            self.video.load_video_cap(video_file)
 
         # set paths
         if base_dir:
@@ -286,6 +290,66 @@ class PupilPipeline(Pipeline):
             'width': 100, 'height': 100, 'left': med_x - 50, 'top': med_y - 50,
             'pupil_x': med_x, 'pupil_y': med_y,
         }
+
+    def preprocess_video(self, mp4_file, overwrite=False):
+        """Run required preprocessing such as cropping, flipping, etc. on video before inference.
+
+        Parameters
+        ----------
+        mp4_file : str
+            absolute filepath of video
+        overwrite : bool
+
+        """
+
+        if mp4_file is None:
+            mp4_file = os.path.join(
+                self.paths.alyx_session_path, 'raw_video_data', self.raw_video_name)
+
+        # check to see if preprocessing has already been run
+        video_path = os.path.dirname(mp4_file)
+        mp4_transformed = os.path.join(
+            video_path, self.processed_video_name.replace('.mp4', '_reencode.mp4'))
+
+        if os.path.exists(mp4_transformed) and not overwrite:
+            print(f'{mp4_transformed} already exists; skipping')
+            return mp4_transformed
+
+        # find pupil position for cropping
+        clims = self.crop_params
+
+        # construct ffmpeg commands
+        if self.view == 'right':
+            # flip+upsample+crop+brighten right camera view
+            print_str = 'flipping, upsampling, cropping, and brightening right camera view...'
+            filt = '"hflip,scale=%i:%i,crop=w=%i:h=%i:x=%i:y=%i,colorlevels=rimax=0.25:gimax=0.25:bimax=0.25"' % (
+                IMG_WIDTH * 2, IMG_HEIGHT * 2,
+                clims['width'], clims['height'], clims['left'], clims['top'])
+            # -profile:v main -pix_fmt yuv420p -crf 17 -vsync 0
+            call_str_transform = (
+                f'ffmpeg -i {mp4file} '
+                f'-vf {filt} '
+                f'-c:v libx264 -pix_fmt yuv420p -crf 5 -c:a copy {mp4_transformed}')
+
+        elif self.view == 'left':
+            # crop+brighten left camera view
+            print_str = 'cropping and brightening left camera view...'
+            call_str_transform = (
+                f'ffmpeg -i %s '
+                f'-vf "crop=w=%i:h=%i:x=%i:y=%i,colorlevels=rimax=0.25:gimax=0.25:bimax=0.25" '
+                f'-c:v libx264 -pix_fmt yuv420p -crf 11 -c:a copy %s' % (
+                    mp4_file, clims['width'], clims['height'], clims['left'], clims['top'],
+                    mp4_transformed))
+
+        # preprocess
+        print(print_str, end='')
+        subprocess.run(['/bin/bash', '-c', call_str_transform], check=True)
+        print('done')
+
+        # load video cap for later use
+        self.video.load_video_cap(mp4_transformed)
+
+        return mp4_transformed
 
     def pupil_csv_file(self, rng_seed):
         return os.path.join(
@@ -388,7 +452,7 @@ class PupilPipeline(Pipeline):
 
     def load_markers(self, tracker, tracker_name, rng_seed):
         if tracker == 'dlc':
-            dlc_df = self.sess_loader.pose[f'{self.view}Camera']
+            dlc_df = self.sess_loader.pose[f'{self.view}Camera'].copy()
             # subtract offset
             for kp in self.keypoint_names:
                 dlc_df[f'{kp}_x'] = dlc_df[f'{kp}_x'] - self.crop_params['left']
@@ -544,12 +608,12 @@ class PawPipeline(Pipeline):
 
     def load_markers(self, tracker, tracker_name, rng_seed):
         if tracker == 'dlc':
-            dlc_df = self.sess_loader.pose[f'{self.view}Camera']
+            dlc_df = self.sess_loader.pose[f'{self.view}Camera'].copy()
             # downsample
             for kp in self.keypoint_names:
                 dlc_df[f'{kp}_x'] /= (DS_FACTOR * RESOLUTION[self.view])
                 dlc_df[f'{kp}_y'] /= (DS_FACTOR * RESOLUTION[self.view])
-            # flip horizontally
+            # flip horizontally to match lp/lpks
             if self.view == 'right':
                 for kp in self.keypoint_names:
                     dlc_df[f'{kp}_x'] = IMG_WIDTH / DS_FACTOR - dlc_df[f'{kp}_x']
