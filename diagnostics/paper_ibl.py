@@ -54,6 +54,7 @@ class Pipeline(object):
         self.sess_loader.load_trials()
         self.sess_loader.load_pose(views=['left', 'right'], likelihood_thr=likelihood_thr)
 
+        self.raw_video_name = f'_iblrig_{self.view}Camera.raw.mp4'
         self.processed_video_name = None  # set by children classes
 
         # set paths
@@ -275,7 +276,6 @@ class PupilPipeline(Pipeline):
         super().__init__(
             eid=eid, one=one, view='left', base_dir=base_dir, likelihood_thr=likelihood_thr)
 
-        self.raw_video_name = '_iblrig_leftCamera.raw.mp4'
         self.processed_video_name = '_iblrig_leftCamera.cropped_brightened.mp4'
         self.keypoint_names = ['pupil_top_r', 'pupil_right_r', 'pupil_bottom_r', 'pupil_left_r']
 
@@ -284,9 +284,9 @@ class PupilPipeline(Pipeline):
         self._find_crop_params()
 
         # load video cap
+        self.video = Video()
         video_file = os.path.join(
             self.paths.alyx_session_path, 'raw_video_data', self.processed_video_name)
-        self.video = Video()
         if os.path.exists(video_file):
             self.video.load_video_cap(video_file)
 
@@ -346,8 +346,7 @@ class PupilPipeline(Pipeline):
             filt = '"hflip,scale=%i:%i,crop=w=%i:h=%i:x=%i:y=%i,colorlevels=rimax=0.25:gimax=0.25:bimax=0.25"' % (
                 IMG_WIDTH * 2, IMG_HEIGHT * 2,
                 clims['width'], clims['height'], clims['left'], clims['top'])
-            # -profile:v main -pix_fmt yuv420p -crf 17 -vsync 0
-            call_str_transform = (
+            call_str = (
                 f'ffmpeg -i {mp4file} '
                 f'-vf {filt} '
                 f'-c:v libx264 -pix_fmt yuv420p -crf 5 -c:a copy {mp4_transformed}')
@@ -355,7 +354,7 @@ class PupilPipeline(Pipeline):
         elif self.view == 'left':
             # crop+brighten left camera view
             print_str = 'cropping and brightening left camera view...'
-            call_str_transform = (
+            call_str = (
                 f'ffmpeg -i %s '
                 f'-vf "crop=w=%i:h=%i:x=%i:y=%i,colorlevels=rimax=0.25:gimax=0.25:bimax=0.25" '
                 f'-c:v libx264 -pix_fmt yuv420p -crf 11 -c:a copy %s' % (
@@ -364,7 +363,7 @@ class PupilPipeline(Pipeline):
 
         # preprocess
         print(print_str, end='')
-        subprocess.run(['/bin/bash', '-c', call_str_transform], check=True)
+        subprocess.run(['/bin/bash', '-c', call_str], check=True)
         print('done')
 
         # load video cap for later use
@@ -536,12 +535,67 @@ class PawPipeline(Pipeline):
 
         # load video cap
         self.video = Video()
-        self.video.load_video_cap(os.path.join(
-            self.paths.alyx_session_path, 'raw_video_data', self.processed_video_name))
+        video_file = os.path.join(
+            self.paths.alyx_session_path, 'raw_video_data', self.processed_video_name)
+        if not os.path.exists(video_file):
+            video_file = video_file.replace('.mp4', '_reencode.mp4')
+        if os.path.exists(video_file):
+            self.video.load_video_cap(video_file)
 
         # set paths
         if base_dir:
             self.paths.paw_csv_dir = os.path.join(base_dir, 'paw_preds')
+
+    def preprocess_video(self, mp4_file, overwrite=False):
+        """Run required preprocessing such as cropping, flipping, etc. on video before inference.
+
+        Parameters
+        ----------
+        mp4_file : str
+            absolute filepath of video
+        overwrite : bool
+
+        """
+
+        if mp4_file is None:
+            mp4_file = os.path.join(
+                self.paths.alyx_session_path, 'raw_video_data', self.raw_video_name)
+
+        # check to see if preprocessing has already been run
+        video_path = os.path.dirname(mp4_file)
+        mp4_transformed = os.path.join(
+            video_path, self.processed_video_name.replace('.mp4', '_reencode.mp4'))
+
+        if os.path.exists(mp4_transformed) and not overwrite:
+            print(f'{mp4_transformed} already exists; skipping')
+            return mp4_transformed
+
+        # construct ffmpeg commands
+        if self.view == 'right':
+            # flip+downsample right camera view
+            print_str = 'flipping and downsampling right camera view...'
+            call_str = (
+                f'ffmpeg -i {mp4_file} '
+                f'-filter:v "hflip,scale={IMG_WIDTH // DS_FACTOR}:{IMG_HEIGHT // DS_FACTOR}" '
+                f'-c:v libx264 -pix_fmt yuv420p -crf 17 -c:a copy {mp4_transformed}')
+
+        elif self.view == 'left':
+            # downsample left camera view
+            print_str = 'downsampling left camera view...'
+            call_str = (
+                f'ffmpeg -i {mp4_file} '
+                f'-filter:v "scale={IMG_WIDTH // DS_FACTOR}:{IMG_HEIGHT // DS_FACTOR}" '
+                f'-c:v libx264 -pix_fmt yuv420p -crf 17 -c:a copy {mp4_transformed}')
+
+        # preprocess
+        print(print_str, end='')
+        subprocess.run(['/bin/bash', '-c', call_str], check=True)
+        print('done')
+
+        # load video cap for later use
+        self.video.load_video_cap(mp4_transformed)
+
+        return mp4_transformed
 
     def decode(
             self, paw, date, trackers, tracker_name, rng_seed, align_event='firstMovement_times',
@@ -870,8 +924,15 @@ class Paths(object):
 # -----------------------
 # general funcs
 # -----------------------
-def get_formatted_df(filename, keypoint_names, tracker='heatmap_tracker'):
-    dlc_df_ = pd.read_csv(filename, header=[0, 1, 2], index_col=0)
+def get_formatted_df(filename, keypoint_names=None, tracker=None):
+    if isinstance(filename, str):
+        dlc_df_ = pd.read_csv(filename, header=[0, 1, 2], index_col=0)
+    else:
+        dlc_df_ = filename
+    if keypoint_names is None:
+        keypoint_names = [l[1] for l in dlc_df_.columns[::3]]
+    if tracker is None:
+        tracker = dlc_df_.columns[0][0]
     dlc_df = {}
     for kp in keypoint_names:
         for f in ['x', 'y', 'likelihood']:

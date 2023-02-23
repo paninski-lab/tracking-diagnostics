@@ -36,8 +36,8 @@ base_dir
 
 """
 
-gpu_id = 0
-rng_seed = 0  # choose ensemble member for single-model analyses
+gpu_id = 1
+rng_seed = 0  # choose ensemble member for single-model analyses (decoding)
 tracker_name = 'heatmap_mhcrnn_tracker'
 pipe_kwargs = {
     'download_data': {  # download data from flatiron
@@ -47,9 +47,9 @@ pipe_kwargs = {
     'reencode_video': {  # reencode already ffmpeg-processed video
         'run': False, 'kwargs': {'overwrite': False}},
     'infer_video': {
-        'run': False, 'kwargs': {'overwrite': False, 'gpu_id': gpu_id}},
+        'run': True, 'kwargs': {'overwrite': False, 'gpu_id': gpu_id}},
     'smooth_ibl': {
-        'run': False, 'kwargs': {'overwrite': False, 'tracker_name': tracker_name}},
+        'run': True, 'kwargs': {'overwrite': False, 'tracker_name': tracker_name}},
     'smooth_kalman': {
         'run': True, 'kwargs': {'overwrite': False, 'tracker_name': tracker_name}},
     'decode': {
@@ -119,16 +119,31 @@ pipe_kwargs = {
 # ]
 
 # for felix/prior paper
-eids = [
-    # '07dc4b76-5b93-4a03-82a0-b3d9cc73f412',
-    # '6274dda8-3a59-4aa1-95f8-a8a549c46a26',
-    '034e726f-b35f-41e0-8d6c-a22cc32391fb',
-]
+# eids = [
+#     '07dc4b76-5b93-4a03-82a0-b3d9cc73f412',
+#     '6274dda8-3a59-4aa1-95f8-a8a549c46a26',
+#     # '034e726f-b35f-41e0-8d6c-a22cc32391fb',
+# ]
 
 # for repro-ephys paper
-# eids = [
-#
-# ]
+eids = [
+    # '56b57c38-2699-4091-90a8-aba35103155e',
+    # '41872d7f-75cb-4445-bb1a-132b354c44f0',
+    # '6f09ba7e-e3ce-44b0-932b-c003fb44fb89',
+    # '862ade13-53cd-4221-a3fa-dda8643641f2',
+    # '72cb5550-43b4-4ef0-add5-e4adfdfb5e02',
+    # 'ee40aece-cffd-4edb-a4b6-155f158c666a',
+    # '30c4e2ab-dffc-499d-aae4-e51d6b3218c2',
+    # 'c7248e09-8c0d-40f2-9eb4-700a8973d8c8',
+    # 'f312aaec-3b6f-44b3-86b4-3a0c119c0438',
+    # 'dda5fc59-f09a-4256-9fb5-66c67667a466',
+    # 'ecb5520d-1358-434c-95ec-93687ecd1396',
+    # '4b00df29-3769-43be-bb40-128b1cba6d35',
+    '54238fd6-d2d0-4408-b1a9-d19d24fd29ce',
+    'db4df448-e449-4a6f-a0e7-288711e7a75a',
+    'b03fbc44-3d8e-4a6c-8a50-5ea3498568e0',
+    'd23a44ef-1402-4ed7-97f5-47e9a7a504d9',
+]
 
 
 # ----------------------------
@@ -155,6 +170,11 @@ for e, eid in enumerate(eids):
     print(pipe.paths.alyx_session_path)
 
     try:
+
+        # preprocess video into correct size/shape for lightning pose network
+        if pipe_kwargs['download_data']['run']:
+            pipe.download_data(**pipe_kwargs['download_data']['kwargs'])
+
         # preprocess video into correct size/shape for lightning pose network
         if pipe_kwargs['preprocess_video']['run']:
             pipe.preprocess_video(**pipe_kwargs['preprocess_video']['kwargs'])
