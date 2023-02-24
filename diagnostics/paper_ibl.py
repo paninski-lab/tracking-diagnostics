@@ -23,6 +23,7 @@ import subprocess
 from diagnostics.ensemble_kalman_filter import ensemble_kalman_smoother_pupil
 from diagnostics.ensemble_kalman_filter import ensemble_kalman_smoother_paw_asynchronous
 from diagnostics.ensemble_kalman_filter import get_pupil_location
+from diagnostics.video import make_sync_video
 
 
 # camera constants (from Michael Schartner)
@@ -287,8 +288,12 @@ class PupilPipeline(Pipeline):
         self.video = Video()
         video_file = os.path.join(
             self.paths.alyx_session_path, 'raw_video_data', self.processed_video_name)
+        if not os.path.exists(video_file):
+            video_file = video_file.replace('.mp4', '_reencode.mp4')
         if os.path.exists(video_file):
             self.video.load_video_cap(video_file)
+        else:
+            print(f'{video_file} does not exist!')
 
         # set paths
         if base_dir:
@@ -387,12 +392,14 @@ class PupilPipeline(Pipeline):
             return pupil_csv_file
 
         # run smoothing
+        print('ibl smoothing of pupil...')
         dlc_df = get_formatted_df(pred_csv_file, self.keypoint_names, tracker=tracker_name)
         diam_raw = get_pupil_diameter(dlc_df)
         diam_smooth = get_smooth_pupil_diameter(diam_raw, camera=self.view)
         pupil_features = pd.DataFrame(
             {'pupilDiameter_raw': diam_raw, 'pupilDiameter_smooth': diam_smooth})
         pupil_features.to_csv(pupil_csv_file)
+        print('done')
         return pupil_csv_file
 
     def smooth_kalman(
@@ -541,6 +548,8 @@ class PawPipeline(Pipeline):
             video_file = video_file.replace('.mp4', '_reencode.mp4')
         if os.path.exists(video_file):
             self.video.load_video_cap(video_file)
+        else:
+            print(f'{video_file} does not exist!')
 
         # set paths
         if base_dir:
@@ -747,6 +756,50 @@ class MultiviewPawPipeline(object):
 
     def timestamps_file(self, view):
         return os.path.join(self.paths.alyx_session_path, 'alf', f'_ibl_{view}Camera.times.npy')
+
+    def make_sync_video(self, use_raw_vids=True, idx_beg=11500, idx_end=12000, overwrite=False):
+
+        save_file = os.path.join(self.paths.base_dir, 'qc_vids', f'{self.eid}.mp4')
+        if os.path.exists(save_file) and not overwrite:
+            print(f'{save_file} already exists; skipping')
+            return
+
+        if use_raw_vids:
+            videos_raw = {}
+            for view in ['left', 'right']:
+                video_file = os.path.join(
+                    self.pipes[view].paths.alyx_session_path, 'raw_video_data',
+                    self.pipes[view].raw_video_name)
+                videos_raw[view] = Video()
+                videos_raw[view].load_video_cap(video_file)
+
+            caps = {'left': videos_raw['left'].video_cap, 'right': videos_raw['right'].video_cap}
+            height = 2
+        else:
+            # use processed vids
+            caps = {
+                'left': self.pipes['left'].video.video_cap,
+                'right': self.pipes['right'].video.video_cap,
+            }
+            height = 2.2
+
+        times = {
+            'left': np.load(self.timestamps_file('left')),
+            'right': np.load(self.timestamps_file('right')),
+        }
+
+        interpolater = interpolate.interp1d(
+            times['right'], np.arange(len(times['right'])), kind='nearest',
+            fill_value='extrapolate')
+        interp_r2l = np.round(interpolater(times['left'])).astype(np.int32)
+        idxs_left = np.arange(idx_beg, idx_end)
+        idxs = {'left': idxs_left, 'right': interp_r2l[idxs_left]}
+
+        # make sure we're far enough into the session for both cameras to have started
+        assert np.all(idxs['left'][:10] != 0)
+        assert np.all(idxs['right'][:10] != 0)
+
+        make_sync_video(save_file, caps, idxs, framerate=20, height=height, max_frames=1000)
 
     def smooth_kalman(
             self, preds_csv_files, model_dirs, tracker_name, timestamp_files=None,

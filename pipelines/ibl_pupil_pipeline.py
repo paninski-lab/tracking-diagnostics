@@ -36,7 +36,7 @@ base_dir
 
 """
 
-gpu_id = 1
+gpu_id = 0
 rng_seed = 0  # choose ensemble member for single-model analyses (decoding)
 tracker_name = 'heatmap_mhcrnn_tracker'
 pipe_kwargs = {
@@ -120,29 +120,29 @@ pipe_kwargs = {
 
 # for felix/prior paper
 # eids = [
-#     '07dc4b76-5b93-4a03-82a0-b3d9cc73f412',
-#     '6274dda8-3a59-4aa1-95f8-a8a549c46a26',
-#     # '034e726f-b35f-41e0-8d6c-a22cc32391fb',
+#     # '07dc4b76-5b93-4a03-82a0-b3d9cc73f412',  # timestamp issues
+#     # '6274dda8-3a59-4aa1-95f8-a8a549c46a26',  # timestamp issues
+#     '034e726f-b35f-41e0-8d6c-a22cc32391fb',
 # ]
 
 # for repro-ephys paper
 eids = [
-    # '56b57c38-2699-4091-90a8-aba35103155e',
-    # '41872d7f-75cb-4445-bb1a-132b354c44f0',
-    # '6f09ba7e-e3ce-44b0-932b-c003fb44fb89',
-    # '862ade13-53cd-4221-a3fa-dda8643641f2',
-    # '72cb5550-43b4-4ef0-add5-e4adfdfb5e02',
-    # 'ee40aece-cffd-4edb-a4b6-155f158c666a',
-    # '30c4e2ab-dffc-499d-aae4-e51d6b3218c2',
-    # 'c7248e09-8c0d-40f2-9eb4-700a8973d8c8',
-    # 'f312aaec-3b6f-44b3-86b4-3a0c119c0438',
-    # 'dda5fc59-f09a-4256-9fb5-66c67667a466',
-    # 'ecb5520d-1358-434c-95ec-93687ecd1396',
-    # '4b00df29-3769-43be-bb40-128b1cba6d35',
-    '54238fd6-d2d0-4408-b1a9-d19d24fd29ce',
-    'db4df448-e449-4a6f-a0e7-288711e7a75a',
-    'b03fbc44-3d8e-4a6c-8a50-5ea3498568e0',
-    'd23a44ef-1402-4ed7-97f5-47e9a7a504d9',
+    # '56b57c38-2699-4091-90a8-aba35103155e',  # sync good
+    '41872d7f-75cb-4445-bb1a-132b354c44f0',  # sync good
+    # '6f09ba7e-e3ce-44b0-932b-c003fb44fb89',  # sync BAD (left cam ok?)
+    # '862ade13-53cd-4221-a3fa-dda8643641f2',  # sync BAD (left cam bad)
+    '72cb5550-43b4-4ef0-add5-e4adfdfb5e02',  # sync ok (off by one)
+    'ee40aece-cffd-4edb-a4b6-155f158c666a',  # sync good
+    '30c4e2ab-dffc-499d-aae4-e51d6b3218c2',  # sync good
+    'c7248e09-8c0d-40f2-9eb4-700a8973d8c8',  # sync ok (off by one?)
+    'f312aaec-3b6f-44b3-86b4-3a0c119c0438',  # sync good
+    'dda5fc59-f09a-4256-9fb5-66c67667a466',  # sync good
+    'ecb5520d-1358-434c-95ec-93687ecd1396',  # sync ok (off by one)
+    '4b00df29-3769-43be-bb40-128b1cba6d35',  # sync good
+    '54238fd6-d2d0-4408-b1a9-d19d24fd29ce',  # sync ok (off by one?)
+    'db4df448-e449-4a6f-a0e7-288711e7a75a',  # sync good
+    'b03fbc44-3d8e-4a6c-8a50-5ea3498568e0',  # sync ok (off by one or two)
+    'd23a44ef-1402-4ed7-97f5-47e9a7a504d9',  # sync good
 ]
 
 

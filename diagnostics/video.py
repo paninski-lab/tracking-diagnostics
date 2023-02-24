@@ -1,8 +1,10 @@
 import cv2
+import matplotlib.gridspec as gridspec
 import matplotlib.pyplot as plt
 import numpy as np
 import os
 import shutil
+from skimage import transform
 import subprocess
 from typing import Optional
 
@@ -179,6 +181,62 @@ def make_labeled_video_wrapper(
         likelihood_thresh=likelihood_thresh, max_frames=max_frames, markersize=markersize,
         framerate=framerate, height=height
     )
+
+
+def make_sync_video(save_file, caps, idxs, framerate=20, height=3, max_frames=1000):
+
+    tmp_dir = os.path.join(os.path.dirname(save_file), 'tmpZzZ')
+    os.makedirs(tmp_dir, exist_ok=True)
+
+    n_frames = np.min([idxs['left'].shape[0], max_frames])
+    frame_r = get_frames_from_idxs(caps['right'], [0])
+    _, _, img_height_r, img_width_r, = frame_r.shape
+    frame_l = get_frames_from_idxs(caps['left'], [0])
+    _, _, img_height_l, img_width_l, = frame_l.shape
+
+    resize_fr = False
+    if img_height_r != img_height_l:
+        # we're not looking at processed frames; need to resize
+        resize_fr = True
+        img_height_r = 256
+        img_width_r = 320
+
+    h = height
+    w = h * (img_width_r / img_height_r)
+    fig = plt.figure(figsize=(2 * w, h))
+    gs = gridspec.GridSpec(1, 2, figure=fig, wspace=0, hspace=0)
+    axes_fr = {'right': fig.add_subplot(gs[0]), 'left': fig.add_subplot(gs[1])}
+    plt.subplots_adjust(wspace=0, hspace=0, left=0, bottom=0, right=1, top=1)
+
+    for idx_frame in range(n_frames):
+
+        if idx_frame % 100 == 0:
+            print('processing frame %03i/%03i' % (idx_frame, n_frames))
+
+        for view, ax in axes_fr.items():
+            ax.clear()  # important!! otherwise each frame will plot on top of the last
+            ax.axis('off')
+            idx = idxs[view][idx_frame]
+            frame = get_frames_from_idxs(caps[view], [idx])
+            if resize_fr:
+                frame_tmp = transform.resize(frame[0, 0], (img_height_r, img_width_r))
+                vmax = 1  # sklearn rescales from [0, 255] to [0, 1]
+            else:
+                vmax = 255
+                if view == 'right':
+                    # assume we're looking at processed frame that needs horizontal flip
+                    frame_tmp = np.fliplr(frame[0, 0])
+                else:
+                    frame_tmp = frame[0, 0]
+            axes_fr[view].imshow(frame_tmp, vmin=0, vmax=vmax, cmap='gray')
+            ax.set_xticks([])
+            ax.set_yticks([])
+
+        plt.savefig(
+            os.path.join(tmp_dir, 'frame_%06i.jpeg' % idx_frame), dpi=300, bbox_inches='tight',
+            pad_inches=0.0)
+
+    save_video(save_file, tmp_dir, framerate, frame_pattern='frame_%06i.jpeg')
 
 
 def make_labeled_video_peths(
