@@ -217,7 +217,9 @@ class Pipeline(object):
             params['add_to_saving_path'] = f'{tracker}'
 
             # load target data
-            dlc_dict = self.get_target_data(tracker, tracker_name, rng_seed, params['target'])
+            dlc_dict = self.get_target_data(
+                tracker=tracker, tracker_name=tracker_name, rng_seed=rng_seed,
+                target=params['target'])
 
             # perform full nested xv decoding
             fit_eid(
@@ -462,7 +464,7 @@ class PupilPipeline(Pipeline):
 
         self.decode_wrapper(results_dir, params, trackers, tracker_name, rng_seed)
 
-    def get_target_data(self, tracker, tracker_name, rng_seed):
+    def get_target_data(self, tracker, tracker_name, rng_seed, **kwargs):
         dlc_dict = {'times': self.sess_loader.pupil['times'].to_numpy(), 'skip': False}
         if tracker == 'dlc':
             dlc_dict['values'] = self.sess_loader.pupil['pupilDiameter_smooth'].to_numpy()
@@ -471,7 +473,7 @@ class PupilPipeline(Pipeline):
             df_tmp = pd.read_csv(filename, header=[0], index_col=0)
             dlc_dict['values'] = df_tmp['pupilDiameter_smooth'].to_numpy()
         elif tracker == 'lp+ks':
-            filename = self.kalman_markers_file
+            filename = self.kalman_latents_file
             features = pd.read_csv(filename, header=[0, 1], index_col=0)
             dlc_dict['values'] = features.loc[:, (tracker_name, 'diameter')].to_numpy()
         assert dlc_dict['values'].shape[0] == dlc_dict['times'].shape[0]
