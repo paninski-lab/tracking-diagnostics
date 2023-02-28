@@ -547,11 +547,19 @@ class PawPipeline(Pipeline):
         video_file = os.path.join(
             self.paths.alyx_session_path, 'raw_video_data', self.processed_video_name)
         if not os.path.exists(video_file):
+            print(f'{video_file} does not exist!')
             video_file = video_file.replace('.mp4', '_reencode.mp4')
+            print(f'trying to load {video_file}')
+        if not os.path.exists(video_file):
+            print(f'{video_file} does not exist!')
+            video_file = os.path.join(
+                self.paths.alyx_session_path, 'raw_video_data', self.raw_video_name)
+            print(f'trying to load {video_file}')
         if os.path.exists(video_file):
             self.video.load_video_cap(video_file)
         else:
             print(f'{video_file} does not exist!')
+            print(f'no video file loaded for eid {self.eid}')
 
         # set paths
         if base_dir:
@@ -759,7 +767,7 @@ class MultiviewPawPipeline(object):
     def timestamps_file(self, view):
         return os.path.join(self.paths.alyx_session_path, 'alf', f'_ibl_{view}Camera.times.npy')
 
-    def make_sync_video(self, use_raw_vids=True, idx_beg=11500, idx_end=12000, overwrite=False):
+    def make_sync_video(self, use_raw_vids=True, idx_beg=10000, idx_end=10500, overwrite=False):
 
         save_file = os.path.join(self.paths.base_dir, 'qc_vids', f'{self.eid}.mp4')
         if os.path.exists(save_file) and not overwrite:
@@ -801,7 +809,7 @@ class MultiviewPawPipeline(object):
         assert np.all(idxs['left'][:10] != 0)
         assert np.all(idxs['right'][:10] != 0)
 
-        make_sync_video(save_file, caps, idxs, framerate=20, height=height, max_frames=1000)
+        make_sync_video(save_file, caps, idxs, framerate=20, height=height, max_frames=10000)
 
     def smooth_kalman(
             self, preds_csv_files, model_dirs, tracker_name, timestamp_files=None,
