@@ -883,6 +883,8 @@ class MultiviewPawPipeline(object):
             timestamps_left_cam=timestamps_l_cam,
             timestamps_right_cam=timestamps_r_cam,
             keypoint_names=self.keypoint_names,
+            smooth_param=0.1,
+            quantile_keep_pca=25,
         )
 
         # save smoothed markers from left view

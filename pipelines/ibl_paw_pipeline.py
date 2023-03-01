@@ -47,19 +47,19 @@ pipe_kwargs = {
         'run': False,
         'kwargs': {'overwrite': False, 'use_raw_vids': True, 'idx_beg': 15000, 'idx_end': 17000}},
     'preprocess_video': {  # process and reencode video with ffmpeg
-        'run': True,
+        'run': False,
         'kwargs': {'overwrite': False, 'mp4_file': None}},
     'reencode_video': {  # reencode already ffmpeg-processed video
         'run': False,
         'kwargs': {'overwrite': False}},
     'infer_video': {
-        'run': True,
+        'run': False,
         'kwargs': {'overwrite': False, 'gpu_id': gpu_id}},
     'smooth_kalman': {
-        'run': True,
+        'run': False,
         'kwargs': {'overwrite': False, 'tracker_name': tracker_name}},
     'decode': {
-        'run': False,
+        'run': True,
         'kwargs': {
             # 'overwrite': False,
             'tracker_name': tracker_name,
@@ -157,57 +157,92 @@ eids = [
 ]
 
 # for repro-ephys paper
-eids = [
-    # sync good
-    # '56b57c38-2699-4091-90a8-aba35103155e',  # in paw labeled data
-    # '41872d7f-75cb-4445-bb1a-132b354c44f0',  # not in BWM dataset
-    # 'ee40aece-cffd-4edb-a4b6-155f158c666a',
-    # '30c4e2ab-dffc-499d-aae4-e51d6b3218c2',  # not in BWM dataset
-    # 'f312aaec-3b6f-44b3-86b4-3a0c119c0438',
-    # 'dda5fc59-f09a-4256-9fb5-66c67667a466',
-    # '4b00df29-3769-43be-bb40-128b1cba6d35',
-    # 'db4df448-e449-4a6f-a0e7-288711e7a75a',  # in pupil/paw labeled data
-    # 'd23a44ef-1402-4ed7-97f5-47e9a7a504d9',
-    # 'dac3a4c1-b666-4de0-87e8-8c514483cacf',  # in paw labeled data
-    # '0a018f12-ee06-4b11-97aa-bbbff5448e9f',
-    # '51e53aff-1d5d-4182-a684-aba783d50ae5',
-    # '4a45c8ba-db6f-4f11-9403-56e06a33dfa4',
-    # '781b35fd-e1f0-4d14-b2bb-95b7263082bb',  # in litpose pupil list already
-    # 'f140a2ec-fd49-4814-994a-fe3476f14e66',  # not in BWM dataset
-    # '3638d102-e8b6-4230-8742-e548cd87a949',
-    # '88224abb-5746-431f-9c17-17d7ef806e6a',
-    # 'd0ea3148-948d-4817-94f8-dcaf2342bbbe',  # in litpose paw list already
-    # 'a4a74102-2af5-45dc-9e41-ef7f5aed88be',
-    # '3f859b5c-e73a-4044-b49e-34bb81e96715',
-    # '754b74d5-7a06-4004-ae0c-72a10b6ed2e6',  # not in BWM dataset; bad cam positions
-    # 'd9f0c293-df4c-410a-846d-842e47c6b502',  # in paw labeled data; not in BWM dataset
-    # 'b22f694e-4a34-4142-ab9d-2556c3487086',
-    # '746d1902-fa59-4cab-b0aa-013be36060d5',  # in litpose paw list already
-    # '4b7fbad4-f6de-43b4-9b15-c7c7ef44db4b',
-    # 'aad23144-0e52-4eac-80c5-c4ee2decb198',  # in pupil/paw labeled data
-    # '0802ced5-33a3-405e-8336-b65ebc5cb07c',
-    # # sync ok
-    # '72cb5550-43b4-4ef0-add5-e4adfdfb5e02',  # off by one; in litpose paw list already
-    # 'c7248e09-8c0d-40f2-9eb4-700a8973d8c8',  # off by one? not in BWM dataset
-    # 'ecb5520d-1358-434c-95ec-93687ecd1396',  # off by one
-    # '54238fd6-d2d0-4408-b1a9-d19d24fd29ce',  # off by one?
-    # 'b03fbc44-3d8e-4a6c-8a50-5ea3498568e0',  # off by one or two; not in BWM dataset
-    # '3e6a97d3-3991-49e2-b346-6948cb4580fb',  # off by one?; not in BWM dataset
-    # '8928f98a-b411-497e-aa4b-aa752434686d',  # off by one; in litpose pupil list already
-    # sync BAD
-    # '6f09ba7e-e3ce-44b0-932b-c003fb44fb89',  # left cam ok (in litpose pupil list)
-    # '862ade13-53cd-4221-a3fa-dda8643641f2',  # left cam bad
-    # 'e2b845a1-e313-4a08-bc61-a5f662ed295e',  # in litpose paw list
-    # 'a8a8af78-16de-4841-ab07-fde4b5281a03',  # off by one or two, looks bad; in paw labeled data
-    '61e11a11-ab65-48fb-ae08-3cb80662e5d6',  # off by one or two, looks bad; in paw labeled data; not in BWM dataset
-    # '0c828385-6dd6-4842-a702-c5075f5f5e81',
-    # '824cf03d-4012-4ab1-b499-c83a92c5589e',
-    # '2bdf206a-820f-402f-920a-9e86cd5388a4',
-    # '8a3a0197-b40a-449f-be55-c00b23253bbf',
-    # other issues
-    # 'c7bf2d49-4937-4597-b307-9f39cb1c7b16',  # no timestamps; not in BWM dataset
-    # '7af49c00-63dd-4fed-b2e0-1b3bd945b20b',  # right cam timestamps seem weird?
-]
+# eids = [
+#     # sync good
+#     '56b57c38-2699-4091-90a8-aba35103155e',  # in paw labeled data
+#     '41872d7f-75cb-4445-bb1a-132b354c44f0',  # not in BWM dataset
+#     'ee40aece-cffd-4edb-a4b6-155f158c666a',
+#     '30c4e2ab-dffc-499d-aae4-e51d6b3218c2',  # not in BWM dataset
+#     'f312aaec-3b6f-44b3-86b4-3a0c119c0438',
+#     'dda5fc59-f09a-4256-9fb5-66c67667a466',
+#     '4b00df29-3769-43be-bb40-128b1cba6d35',
+#     'db4df448-e449-4a6f-a0e7-288711e7a75a',  # in pupil/paw labeled data
+#     'd23a44ef-1402-4ed7-97f5-47e9a7a504d9',
+#     'dac3a4c1-b666-4de0-87e8-8c514483cacf',  # in paw labeled data
+#     '0a018f12-ee06-4b11-97aa-bbbff5448e9f',
+#     '51e53aff-1d5d-4182-a684-aba783d50ae5',
+#     '4a45c8ba-db6f-4f11-9403-56e06a33dfa4',
+#     '781b35fd-e1f0-4d14-b2bb-95b7263082bb',  # in litpose pupil list already
+#     'f140a2ec-fd49-4814-994a-fe3476f14e66',  # not in BWM dataset
+#     '3638d102-e8b6-4230-8742-e548cd87a949',
+#     '88224abb-5746-431f-9c17-17d7ef806e6a',
+#     'd0ea3148-948d-4817-94f8-dcaf2342bbbe',  # in litpose paw list already
+#     'a4a74102-2af5-45dc-9e41-ef7f5aed88be',
+#     '3f859b5c-e73a-4044-b49e-34bb81e96715',
+#     '754b74d5-7a06-4004-ae0c-72a10b6ed2e6',  # not in BWM dataset; bad cam positions
+#     'd9f0c293-df4c-410a-846d-842e47c6b502',  # in paw labeled data; not in BWM dataset
+#     'b22f694e-4a34-4142-ab9d-2556c3487086',
+#     '746d1902-fa59-4cab-b0aa-013be36060d5',  # in litpose paw list already
+#     '4b7fbad4-f6de-43b4-9b15-c7c7ef44db4b',
+#     'aad23144-0e52-4eac-80c5-c4ee2decb198',  # in pupil/paw labeled data
+#     '0802ced5-33a3-405e-8336-b65ebc5cb07c',
+#     # sync ok
+#     '72cb5550-43b4-4ef0-add5-e4adfdfb5e02',  # off by one; in litpose paw list already
+#     'c7248e09-8c0d-40f2-9eb4-700a8973d8c8',  # off by one? not in BWM dataset
+#     'ecb5520d-1358-434c-95ec-93687ecd1396',  # off by one
+#     '54238fd6-d2d0-4408-b1a9-d19d24fd29ce',  # off by one?
+#     'b03fbc44-3d8e-4a6c-8a50-5ea3498568e0',  # off by one or two; not in BWM dataset
+#     '3e6a97d3-3991-49e2-b346-6948cb4580fb',  # off by one?; not in BWM dataset
+#     '8928f98a-b411-497e-aa4b-aa752434686d',  # off by one; in litpose pupil list already
+#     # sync BAD
+#     # '6f09ba7e-e3ce-44b0-932b-c003fb44fb89',  # left cam ok (in litpose pupil list)
+#     # '862ade13-53cd-4221-a3fa-dda8643641f2',  # left cam bad
+#     # 'e2b845a1-e313-4a08-bc61-a5f662ed295e',  # in litpose paw list
+#     # 'a8a8af78-16de-4841-ab07-fde4b5281a03',  # off by one or two, looks bad; in paw labeled data
+#     # '61e11a11-ab65-48fb-ae08-3cb80662e5d6',  # off by one or two, looks bad; in paw labeled data; not in BWM dataset
+#     # '0c828385-6dd6-4842-a702-c5075f5f5e81',
+#     # '824cf03d-4012-4ab1-b499-c83a92c5589e',
+#     # '2bdf206a-820f-402f-920a-9e86cd5388a4',
+#     # '8a3a0197-b40a-449f-be55-c00b23253bbf',
+#     # other issues
+#     # 'c7bf2d49-4937-4597-b307-9f39cb1c7b16',  # no timestamps; not in BWM dataset
+#     # '7af49c00-63dd-4fed-b2e0-1b3bd945b20b',  # right cam timestamps seem weird?
+# ]
+
+# eids = [
+#     # FINAL LIST
+#     '56b57c38-2699-4091-90a8-aba35103155e',  # SWC
+#     '41872d7f-75cb-4445-bb1a-132b354c44f0',  # SWC
+#     'dac3a4c1-b666-4de0-87e8-8c514483cacf',  # SWC
+#     '3638d102-e8b6-4230-8742-e548cd87a949',  # SWC
+#     '30c4e2ab-dffc-499d-aae4-e51d6b3218c2',  # CCU (0.95/.16/.13)
+#     'd0ea3148-948d-4817-94f8-dcaf2342bbbe',  # CCU (1.58/.06/.06)
+#     'a4a74102-2af5-45dc-9e41-ef7f5aed88be',  # CCU (1.33/.14/.26)
+#     '746d1902-fa59-4cab-b0aa-013be36060d5',  # CCU (1.14/.11/.07)
+#     # '88224abb-5746-431f-9c17-17d7ef806e6a',  # CCU (0.21/.14/.16)
+#     # '0802ced5-33a3-405e-8336-b65ebc5cb07c',  # CCU (0.36/.11/.09)
+#     # 'ee40aece-cffd-4edb-a4b6-155f158c666a',  # CCU (0.56/.08/.24)
+#     'f312aaec-3b6f-44b3-86b4-3a0c119c0438',  # CSHL
+#     'dda5fc59-f09a-4256-9fb5-66c67667a466',  # CSHL
+#     '4b7fbad4-f6de-43b4-9b15-c7c7ef44db4b',  # CSHL
+#     'ecb5520d-1358-434c-95ec-93687ecd1396',  # CSHL; off by one
+#     # '4b00df29-3769-43be-bb40-128b1cba6d35',  # CSHL; bad pupil video quality
+#     'db4df448-e449-4a6f-a0e7-288711e7a75a',  # Berkeley
+#     'd23a44ef-1402-4ed7-97f5-47e9a7a504d9',  # Berkeley
+#     '4a45c8ba-db6f-4f11-9403-56e06a33dfa4',  # Berkeley
+#     '54238fd6-d2d0-4408-b1a9-d19d24fd29ce',  # Berkeley; off by one?
+#     # 'b03fbc44-3d8e-4a6c-8a50-5ea3498568e0',  # Berkeley; off by one or two
+#     # '51e53aff-1d5d-4182-a684-aba783d50ae5',  # NYU
+#     # 'f140a2ec-fd49-4814-994a-fe3476f14e66',  # NYU
+#     # '754b74d5-7a06-4004-ae0c-72a10b6ed2e6',  # NYU
+#     # '61e11a11-ab65-48fb-ae08-3cb80662e5d6',  # NYU; off by one or two; video pos bad
+#     '781b35fd-e1f0-4d14-b2bb-95b7263082bb',  # UCL (1.02/.15/.15)
+#     '3f859b5c-e73a-4044-b49e-34bb81e96715',  # UCL (1.55/.07/.17)
+#     'b22f694e-4a34-4142-ab9d-2556c3487086',  # UCL (0.52/.11/.13)
+#     '0a018f12-ee06-4b11-97aa-bbbff5448e9f',  # UCL (0.42/.17/.14)
+#     # 'aad23144-0e52-4eac-80c5-c4ee2decb198',  # UCL (0.42/.01/.12)
+#     # '8928f98a-b411-497e-aa4b-aa752434686d',  # UCL; off by one
+# ]
 
 
 # ----------------------------
