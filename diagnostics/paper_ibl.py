@@ -53,7 +53,17 @@ class Pipeline(object):
         # keep session loader on hand for easy loading
         self.sess_loader = SessionLoader(self.one, self.eid)
         self.sess_loader.load_trials()
-        self.sess_loader.load_pose(views=['left', 'right'], likelihood_thr=likelihood_thr)
+        try:
+            self.sess_loader.load_pose(views=['left', 'right'], likelihood_thr=likelihood_thr)
+        except ValueError as e:
+            # try to load one side only
+            print(e)
+            if str(e).find('left') > -1:
+                self.sess_loader.load_pose(views=['right'], likelihood_thr=likelihood_thr)
+                print('successfully loaded right view')
+            elif str(e).find('right') > -1:
+                self.sess_loader.load_pose(views=['left'], likelihood_thr=likelihood_thr)
+                print('successfully loaded left view')
 
         self.raw_video_name = f'_iblrig_{self.view}Camera.raw.mp4'
         self.processed_video_name = None  # set by children classes
@@ -275,15 +285,22 @@ class Pipeline(object):
 
 class PupilPipeline(Pipeline):
 
-    def __init__(self, eid, one, likelihood_thr=0.9, base_dir=None):
+    def __init__(self, eid, one, likelihood_thr=0.9, base_dir=None, view='left'):
         super().__init__(
-            eid=eid, one=one, view='left', base_dir=base_dir, likelihood_thr=likelihood_thr)
+            eid=eid, one=one, view=view, base_dir=base_dir, likelihood_thr=likelihood_thr)
 
-        self.processed_video_name = '_iblrig_leftCamera.cropped_brightened.mp4'
+        if view == 'left':
+            self.processed_video_name = '_iblrig_leftCamera.cropped_brightened.mp4'
+        elif view == 'right':
+            self.processed_video_name = '_iblrig_leftCamera.flipped_upsampled_cropped_brightened.mp4'
         self.keypoint_names = ['pupil_top_r', 'pupil_right_r', 'pupil_bottom_r', 'pupil_left_r']
 
         # load pupil data
-        self.sess_loader.load_pupil(snr_thresh=0.0)
+        try:
+            self.sess_loader.load_pupil(snr_thresh=0.0)
+        except ValueError as e:
+            print(e)
+            print('proceeding without loading pupil data')
         self._find_crop_params()
 
         # load video cap
@@ -310,9 +327,8 @@ class PupilPipeline(Pipeline):
 
         # assume we'll be dealing with already-upsampled and flipped frames from right camera
         if self.view == 'right':
-            # med_x = 2 * (IMG_WIDTH - med_x)
-            # med_y *= 2
-            raise NotImplementedError
+            med_x = 2 * (IMG_WIDTH - med_x)
+            med_y *= 2
 
         self.crop_params = {
             'width': 100, 'height': 100, 'left': med_x - 50, 'top': med_y - 50,
@@ -354,7 +370,7 @@ class PupilPipeline(Pipeline):
                 IMG_WIDTH * 2, IMG_HEIGHT * 2,
                 clims['width'], clims['height'], clims['left'], clims['top'])
             call_str = (
-                f'ffmpeg -i {mp4file} '
+                f'ffmpeg -i {mp4_file} '
                 f'-vf {filt} '
                 f'-c:v libx264 -pix_fmt yuv420p -crf 5 -c:a copy {mp4_transformed}')
 
