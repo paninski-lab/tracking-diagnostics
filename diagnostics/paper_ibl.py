@@ -458,7 +458,7 @@ class PupilPipeline(Pipeline):
 
     def decode(
             self, date, trackers, tracker_name, rng_seed, align_event='feedback_times',
-            results_dir=None):
+            results_dir=None, **kwargs):
 
         if results_dir is None:
             results_dir = self.paths.decoding_dir
@@ -477,6 +477,8 @@ class PupilPipeline(Pipeline):
         params['estimator'] = lm.Ridge
         params['hyperparam_grid'] = {'alpha': np.array([1e-1, 1e0, 1e1, 1e2, 1e3, 1e4, 1e5])}
         params['imposter_df'] = None  # need to update this later if we do statistical controls
+        for key, val in kwargs.items():
+            params[key] = val
 
         self.decode_wrapper(results_dir, params, trackers, tracker_name, rng_seed)
 
