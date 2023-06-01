@@ -40,30 +40,48 @@ WINDOW_LAG = -0.4
 
 # local info
 conda_script = '/home/mattw/anaconda3/etc/profile.d/conda.sh'
-conda_env = 'pose'
+conda_env = 'pose2'
 
 
 class Pipeline(object):
 
-    def __init__(self, eid, one, view, base_dir=None, likelihood_thr=0.9):
+    def __init__(
+        self, eid, one, view, base_dir=None, likelihood_thr=0.9, allow_trial_fail=False,
+        load_dlc=True, **kwargs,
+    ):
+
         self.eid = eid
         self.one = one
         self.view = view
 
         # keep session loader on hand for easy loading
         self.sess_loader = SessionLoader(self.one, self.eid)
-        self.sess_loader.load_trials()
         try:
-            self.sess_loader.load_pose(views=['left', 'right'], likelihood_thr=likelihood_thr)
-        except ValueError as e:
-            # try to load one side only
-            print(e)
-            if str(e).find('left') > -1:
-                self.sess_loader.load_pose(views=['right'], likelihood_thr=likelihood_thr)
-                print('successfully loaded right view')
-            elif str(e).find('right') > -1:
-                self.sess_loader.load_pose(views=['left'], likelihood_thr=likelihood_thr)
-                print('successfully loaded left view')
+            self.sess_loader.load_trials()
+        except Exception as e:
+            if allow_trial_fail:
+                print(e)
+                print('Trial loading allowed to fail; continuing')
+            else:
+                raise e
+
+        # load dlc data
+        if load_dlc:
+            try:
+                self.sess_loader.load_pose(views=['left', 'right'], likelihood_thr=likelihood_thr)
+            except Exception as e:
+                # try to load one side only
+                print(e)
+
+                if str(e).find('left') > -1:
+                    self.sess_loader.load_pose(views=['right'], likelihood_thr=likelihood_thr)
+                    print('successfully loaded right view')
+                elif str(e).find('right') > -1:
+                    self.sess_loader.load_pose(views=['left'], likelihood_thr=likelihood_thr)
+                    print('successfully loaded left view')
+            self.is_loaded_dlc = True
+        else:
+            self.is_loaded_dlc = False
 
         self.raw_video_name = f'_iblrig_{self.view}Camera.raw.mp4'
         self.processed_video_name = None  # set by children classes
@@ -106,8 +124,8 @@ class Pipeline(object):
             dataset_types = [
                 '_iblrig_%sCamera.raw.mp4' % self.view,  # raw videos
                 '_ibl_%sCamera.times.npy' % self.view,   # alf camera times
-                '_ibl_%sCamera.dlc.pqt' % self.view,     # alf dlc traces
             ]
+
         for dataset_type in dataset_types:
             self.one.load_dataset(self.eid, dataset_type, download_only=True)
 
@@ -165,6 +183,7 @@ class Pipeline(object):
             f'--pred_csv_file {pred_csv_file} ' + \
             f'--gpu_id {gpu_id} '
 
+        print(call_str)
         subprocess.run(['/bin/bash', '-c', call_str], check=True)
 
         return pred_csv_file
@@ -285,9 +304,11 @@ class Pipeline(object):
 
 class PupilPipeline(Pipeline):
 
-    def __init__(self, eid, one, likelihood_thr=0.9, base_dir=None, view='left'):
+    def __init__(self, eid, one, likelihood_thr=0.9, base_dir=None, view='left', **kwargs):
         super().__init__(
-            eid=eid, one=one, view=view, base_dir=base_dir, likelihood_thr=likelihood_thr)
+            eid=eid, one=one, view=view, base_dir=base_dir, likelihood_thr=likelihood_thr,
+            **kwargs
+        )
 
         if view == 'left':
             self.processed_video_name = '_iblrig_leftCamera.cropped_brightened.mp4'
@@ -296,12 +317,20 @@ class PupilPipeline(Pipeline):
         self.keypoint_names = ['pupil_top_r', 'pupil_right_r', 'pupil_bottom_r', 'pupil_left_r']
 
         # load pupil data
-        try:
-            self.sess_loader.load_pupil(snr_thresh=0.0)
-        except ValueError as e:
-            print(e)
-            print('proceeding without loading pupil data')
-        self._find_crop_params()
+        if self.is_loaded_dlc:
+            try:
+                self.sess_loader.load_pupil(snr_thresh=0.0)
+            except ValueError as e:
+                print(e)
+                print('proceeding without loading pupil data')
+
+        # find crop params around pupil
+        if self.is_loaded_dlc and 'pupil_crop_params' not in kwargs.keys():
+            self._find_crop_params()
+        elif 'pupil_crop_params' in kwargs.keys():
+            self.crop_params = kwargs['pupil_crop_params']
+        else:
+            self.crop_params = {}
 
         # load video cap
         self.video = Video()

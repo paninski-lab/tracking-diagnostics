@@ -269,10 +269,12 @@ if pipe_kwargs['download_data']['run'] \
     error_log_single = {}
     for e, eid in enumerate(eids):
         for view in views:
-            pipe = PawPipeline(eid=eid, one=one, view=view, base_dir=base_dir)
             print(f'eid {e}: {eid} ({view})')
-            print(pipe.paths.alyx_session_path)
             try:
+
+                pipe = PawPipeline(eid=eid, one=one, view=view, base_dir=base_dir)
+                print(pipe.paths.alyx_session_path)
+
                 # download data from flatiron
                 if pipe_kwargs['download_data']['run']:
                     pipe.download_data(**pipe_kwargs['download_data']['kwargs'])
@@ -307,26 +309,29 @@ if pipe_kwargs['make_sync_video']['run'] \
         or pipe_kwargs['smooth_kalman']['run']:
     error_log_multi = {}
     for e, eid in enumerate(eids):
-        pipe = MultiviewPawPipeline(eid=eid, one=one, base_dir=base_dir)
         print(f'eid {e}: {eid}')
-        print(pipe.paths.alyx_session_path)
-        # try:
-        # create sync video for manual timestamp qc
-        if pipe_kwargs['make_sync_video']['run']:
-            pipe.make_sync_video(**pipe_kwargs['make_sync_video']['kwargs'])
+        try:
 
-        # smooth results using ensemble kalman smoother
-        if pipe_kwargs['smooth_kalman']['run']:
-            pipe.smooth_kalman(
-                preds_csv_files={
-                    'left': pipe.kalman_markers_file(view='left'),
-                    'right': pipe.kalman_markers_file(view='right'),
-                },
-                model_dirs=model_dirs,
-                **pipe_kwargs['smooth_kalman']['kwargs']
-            )
-        # except Exception as exception:
-        #     error_log_multi[eid] = exception
+            pipe = MultiviewPawPipeline(eid=eid, one=one, base_dir=base_dir)
+            print(pipe.paths.alyx_session_path)
+
+            # create sync video for manual timestamp qc
+            if pipe_kwargs['make_sync_video']['run']:
+                pipe.make_sync_video(**pipe_kwargs['make_sync_video']['kwargs'])
+
+            # smooth results using ensemble kalman smoother
+            if pipe_kwargs['smooth_kalman']['run']:
+                pipe.smooth_kalman(
+                    preds_csv_files={
+                        'left': pipe.kalman_markers_file(view='left'),
+                        'right': pipe.kalman_markers_file(view='right'),
+                    },
+                    model_dirs=model_dirs,
+                    **pipe_kwargs['smooth_kalman']['kwargs']
+                )
+
+        except Exception as exception:
+            error_log_multi[eid] = exception
 
     print('paw multi-view pipeline finished')
     for key, val in error_log_multi.items():
@@ -341,22 +346,22 @@ if pipe_kwargs['decode']['run']:
         print(f'eid {e}: {eid}')
 
         # decode left paw from left view (paw_r)
-        pipe = PawPipeline(eid=eid, one=one, view='left', base_dir=base_dir)
-        print(pipe.paths.alyx_session_path)
-        # try:
-        if pipe_kwargs['decode']['run']:
-            pipe.decode(paw='paw_r', **pipe_kwargs['decode']['kwargs'])
-        # except Exception as exception:
-        #     error_log_decode[f'{eid}_left'] = exception
+        try:
+            pipe = PawPipeline(eid=eid, one=one, view='left', base_dir=base_dir)
+            print(pipe.paths.alyx_session_path)
+            if pipe_kwargs['decode']['run']:
+                pipe.decode(paw='paw_r', **pipe_kwargs['decode']['kwargs'])
+        except Exception as exception:
+            error_log_decode[f'{eid}_left'] = exception
 
         # decode right paw from right view (paw_r, note feature name is not switched - on purpose)
-        pipe = PawPipeline(eid=eid, one=one, view='right', base_dir=base_dir)
-        print(pipe.paths.alyx_session_path)
-        # try:
-        if pipe_kwargs['decode']['run']:
-            pipe.decode(paw='paw_r', **pipe_kwargs['decode']['kwargs'])
-        # except Exception as exception:
-        #     error_log_decode[f'{eid}_left'] = exception
+        try:
+            pipe = PawPipeline(eid=eid, one=one, view='right', base_dir=base_dir)
+            print(pipe.paths.alyx_session_path)
+            if pipe_kwargs['decode']['run']:
+                pipe.decode(paw='paw_r', **pipe_kwargs['decode']['kwargs'])
+        except Exception as exception:
+            error_log_decode[f'{eid}_left'] = exception
 
     print('paw decoding pipeline finished')
     for key, val in error_log_decode.items():
