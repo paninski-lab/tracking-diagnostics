@@ -18,7 +18,10 @@ from diagnostics.paper_ibl import TonguePipeline
 # ----------------------------
 # pipeline user options
 # ----------------------------
+# location of labeled dataset
 data_dir = '/media/mattw/behavior/pose-estimation-data-final/ibl-tongue'
+
+# location of pipeline outputs
 base_dir = '/media/mattw/behavior/results/pose-estimation/ibl-tongue/ensembling-expts'
 """directory structure
 
@@ -39,11 +42,11 @@ rng_seed = 0  # choose ensemble member for single-model analyses (decoding)
 tracker_name = 'heatmap_mhcrnn_tracker'
 pipe_kwargs = {
     'download_data': {  # download data from flatiron
-        'run': False, 'kwargs': {}},
+        'run': True, 'kwargs': {}},
     'preprocess_video': {  # process and reencode video with ffmpeg
         'run': False, 'kwargs': {'overwrite': False, 'mp4_file': None}},
     'reencode_video': {  # reencode already ffmpeg-processed video
-        'run': False, 'kwargs': {'overwrite': False}},
+        'run': True, 'kwargs': {'overwrite': False}},
     'infer_video': {
         'run': True, 'kwargs': {'overwrite': False, 'gpu_id': gpu_id}},
     'smooth_kalman': {
