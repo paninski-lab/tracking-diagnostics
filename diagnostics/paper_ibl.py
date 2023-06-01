@@ -2,9 +2,11 @@
 
 from brainbox.behavior.dlc import plt_window, insert_idx, WINDOW_LEN, SAMPLING, RESOLUTION
 from brainbox.behavior.dlc import get_pupil_diameter, get_smooth_pupil_diameter
+from brainbox.behavior.dlc import likelihood_threshold, get_licks
 from brainbox.io.one import SessionLoader
 from brainwidemap.bwm_loading import (
     bwm_query, load_good_units, load_trials_and_mask, merge_probes)
+from brainbox.processing import bincount2D
 from brainwidemap.decoding.functions.decoding import fit_eid
 from brainwidemap.decoding.functions.process_targets import load_behavior
 from brainwidemap.decoding.functions.utils import get_save_path
@@ -36,7 +38,8 @@ IMG_HEIGHT = 512
 DS_FACTOR = 5
 
 # peth computation/plotting info
-WINDOW_LAG = -0.4
+T_BIN = 0.02  # sec; only used for licks
+WINDOW_LAG = -0.4  # sec
 
 # local info
 conda_script = '/home/mattw/anaconda3/etc/profile.d/conda.sh'
@@ -261,12 +264,15 @@ class Pipeline(object):
                 **params)
 
     @staticmethod
-    def _compute_peth(trials, align_event, view, times, feature_vals, feature_name):
+    def _compute_peth(trials, align_event, view, times, feature_vals, feature_name, binsize=None):
+
+        if not binsize:
+            binsize = 1.0 / SAMPLING[view]
 
         # windows aligned to align_event
         start_window, end_window = plt_window(trials[align_event])
         start_idx = insert_idx(times, start_window)
-        end_idx = np.array(start_idx + int(WINDOW_LEN * SAMPLING[view]), dtype='int64')
+        end_idx = np.array(start_idx + int(WINDOW_LEN / binsize), dtype='int64')
 
         # add feature to trials_df
         trials[feature_name] = [
@@ -282,7 +288,7 @@ class Pipeline(object):
         incorrect_peth = incorrect_vals.mean(axis=1)
 
         return {
-            'times': np.arange(len(correct_peth)) / SAMPLING[view] + WINDOW_LAG,
+            'times': np.arange(len(correct_peth)) * binsize + WINDOW_LAG,
             'start_idxs': start_idx,
             'end_idxs': end_idx,
             'trials': trials,
@@ -572,6 +578,167 @@ class PupilPipeline(Pipeline):
         peth_dict = self._compute_peth(
             trials=trials, align_event=align_event, view=self.view, times=camera_times,
             feature_vals=pupil_diam, feature_name='pupil')
+
+        return peth_dict
+
+
+class TonguePipeline(Pipeline):
+
+    def __init__(self, eid, one, likelihood_thr=0.9, base_dir=None, view='left', **kwargs):
+        super().__init__(
+            eid=eid, one=one, view=view, base_dir=base_dir, likelihood_thr=likelihood_thr,
+            **kwargs
+        )
+
+        if view == 'left':
+            self.processed_video_name = '_iblrig_leftCamera.cropped_tongue.mp4'
+        elif view == 'right':
+            self.processed_video_name = '_iblrig_leftCamera.flipped_upsampled_cropped_tongue.mp4'
+        self.keypoint_names = ['tongue_end_l', 'tongue_end_r', 'tube_top', 'tube_bottom']
+
+        # find crop params around spout
+        if self.is_loaded_dlc and 'crop_params' not in kwargs.keys():
+            self._find_crop_params()
+        elif 'crop_params' in kwargs.keys():
+            self.crop_params = kwargs['crop_params']
+        else:
+            self.crop_params = {}
+
+        # load video cap
+        self.video = Video()
+        video_file = os.path.join(
+            self.paths.alyx_session_path, 'raw_video_data', self.processed_video_name)
+        if not os.path.exists(video_file):
+            video_file = video_file.replace('.mp4', '_reencode.mp4')
+        if os.path.exists(video_file):
+            self.video.load_video_cap(video_file)
+        else:
+            print(f'{video_file} does not exist!')
+
+    def _find_crop_params(self):
+        """Find tongue location in original video for cropping using already-computed markers."""
+        # compute location of spout
+        med_x, med_y = get_spout_location(self.sess_loader.pose[f'{self.view}Camera'])
+
+        # assume we'll be dealing with already-upsampled and flipped frames from right camera
+        if self.view == 'right':
+            med_x = 2 * (IMG_WIDTH - med_x)
+            med_y *= 2
+
+        self.crop_params = {
+            'width': 160, 'height': 160, 'left': med_x - 60, 'top': med_y - 100,
+            'spout_x': med_x, 'spout_y': med_y,
+        }
+
+    def preprocess_video(self, mp4_file, overwrite=False):
+        """Run required preprocessing such as cropping, flipping, etc. on video before inference.
+
+        Parameters
+        ----------
+        mp4_file : str
+            absolute filepath of video
+        overwrite : bool
+
+        """
+
+        if mp4_file is None:
+            mp4_file = os.path.join(
+                self.paths.alyx_session_path, 'raw_video_data', self.raw_video_name)
+
+        # check to see if preprocessing has already been run
+        video_path = os.path.dirname(mp4_file)
+        mp4_transformed = os.path.join(
+            video_path, self.processed_video_name.replace('.mp4', '_reencode.mp4'))
+
+        if os.path.exists(mp4_transformed) and not overwrite:
+            print(f'{mp4_transformed} already exists; skipping')
+            return mp4_transformed
+
+        # find pupil position for cropping
+        clims = self.crop_params
+
+        # construct ffmpeg commands
+        if self.view == 'right':
+
+            # flip+upsample+crop right camera view
+            print_str = 'flipping, upsampling, and cropping right camera view...'
+            filt = '"hflip,scale=%i:%i,crop=w=%i:h=%i:x=%i:y=%i"' % (
+                IMG_WIDTH * 2, IMG_HEIGHT * 2,
+                clims['width'], clims['height'], clims['left'], clims['top'])
+            call_str = (
+                f'ffmpeg -i {mp4_file} '
+                f'-vf {filt} '
+                f'-c:v libx264 -pix_fmt yuv420p -crf 17 -c:a copy {mp4_transformed}')
+
+        elif self.view == 'left':
+            # crop+brighten left camera view
+            print_str = 'cropping left camera view...'
+            filt = '"crop=w=%i:h=%i:x=%i:y=%i"' % (
+                clims['width'], clims['height'], clims['left'], clims['top'])
+            call_str = (
+                f'ffmpeg -i {mp4_file} '
+                f'-vf {filt} '
+                f'-c:v libx264 -pix_fmt yuv420p -crf 17 -c:a copy {mp4_transformed}')
+
+        # preprocess
+        print(print_str, end='')
+        subprocess.run(['/bin/bash', '-c', call_str], check=True)
+        print('done')
+
+        # load video cap for later use
+        self.video.load_video_cap(mp4_transformed)
+
+        return mp4_transformed
+
+    def load_markers(self, tracker, tracker_name, rng_seed):
+        if tracker == 'dlc':
+            dlc_df = self.sess_loader.pose[f'{self.view}Camera'].copy()
+            # subtract offset
+            for kp in self.keypoint_names:
+                dlc_df[f'{kp}_x'] = dlc_df[f'{kp}_x'] - self.crop_params['left']
+                dlc_df[f'{kp}_y'] = dlc_df[f'{kp}_y'] - self.crop_params['top']
+        elif tracker == 'lp':
+            dlc_df = get_formatted_df(
+                self.pred_csv_file(rng_seed), self.keypoint_names, tracker=tracker_name)
+        elif tracker == 'lp+ks':
+            dlc_df = get_formatted_df(
+                self.kalman_markers_file, self.keypoint_names, tracker='ensemble-kalman_tracker')
+        return dlc_df
+
+    def load_lick_times(self, tracker):
+        if tracker != 'dlc':
+            raise ValueError('Can only load pre-computed lick times for tracker="dlc"')
+        lick_times = self.one.load_object(self.paths.alyx_session_path, 'licks')
+        return lick_times['times']
+
+    def compute_lick_times(self, tracker, tracker_name, rng_seed):
+        df = self.load_markers(tracker, tracker_name, rng_seed)
+        if 'times' in df.keys():
+            camera_times = df['times'].to_numpy()
+            df = df.drop(columns='times')
+        else:
+            camera_times = self.sess_loader.pose[f'{self.view}Camera']['times'].to_numpy()
+        df_thresh = likelihood_threshold(df, 0.9)
+        lick_times = get_licks(df_thresh, camera_times)
+        return lick_times
+
+    def compute_peth(self, lick_times, align_event='feedback_times'):
+
+        # get trials data
+        cols_to_keep = [
+            'stimOn_times', 'feedback_times', 'feedbackType', 'firstMovement_times', 'choice']
+        trials = self.sess_loader.trials.loc[:, cols_to_keep]
+        trials = trials.dropna()
+        trials = trials.drop(trials[(trials['feedback_times'] - trials['stimOn_times']) > 10].index)
+
+        # bin lick times at a pre-specified bin size
+        lick_bins, bin_times, _ = bincount2D(lick_times, np.ones(len(lick_times)), T_BIN)
+        lick_bins = np.squeeze(lick_bins)
+
+        peth_dict = self._compute_peth(
+            trials=trials, align_event=align_event, view=self.view, times=bin_times, binsize=T_BIN,
+            feature_vals=lick_bins, feature_name='licks')
+        peth_dict['extent'] = [WINDOW_LAG, WINDOW_LAG + WINDOW_LEN, len(trials['licks'].iloc[0]), 0]
 
         return peth_dict
 
@@ -1073,3 +1240,30 @@ def get_speed(dlc, dlc_t, camera, feature='paw_r'):
     if tv.size > 1:
         ifcn = interpolate.interp1d(tv, s, fill_value="extrapolate")
         return ifcn(dlc_t)
+
+
+def get_spout_location(dlc_df):
+    """Find median x/y position of water spout in left/right videos.
+
+    Parameters
+    ----------
+    dlc_df : pd.DataFrame
+
+    Returns
+    -------
+    tuple
+        - x-value (float)
+        - y-value (float)
+
+    """
+    spout_markers = ['tube_top', 'tube_bottom']
+    spout_x = []
+    spout_y = []
+    for pm in spout_markers:
+        spout_x.append(dlc_df[f'{pm}_x'][:, None])
+        spout_y.append(dlc_df[f'{pm}_y'][:, None])
+    spout_x = np.hstack(spout_x)
+    spout_y = np.hstack(spout_y)
+    median_x = np.nanmedian(spout_x)
+    median_y = np.nanmedian(spout_y)
+    return median_x, median_y

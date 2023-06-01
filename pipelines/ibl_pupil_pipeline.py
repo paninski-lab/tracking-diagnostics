@@ -276,20 +276,13 @@ eids = [
 ]
 # hard code pupil cropping params for these eids
 PUPIL_PARAMS = {
-    '266ddf01-bc63-41b0-939c-94a543e22c37': {
-        'width': 100, 'height': 100, 'left': 430, 'top': 270},
-    '2ffb959c-0578-40eb-9d52-294ee17c9aae': {
-        'width': 100, 'height': 100, 'left': 440, 'top': 280},
-    '3f9cb5b5-2ca9-401d-b4c0-04358e6442b5': {
-        'width': 100, 'height': 100, 'left': 435, 'top': 280},
-    '71e53fd1-38f2-49bb-93a1-3c826fbe7c13': {
-        'width': 100, 'height': 100, 'left': 310, 'top': 100},
-    '8b9d37be-3974-495a-b34f-4de98569d747': {
-        'width': 100, 'height': 100, 'left': 420, 'top': 300},
-    'cbaaf335-5fcb-4ec1-bb66-2dc9cca55ce9': {
-        'width': 100, 'height': 100, 'left': 370, 'top': 120},
-    'd7128a09-1822-49fc-a287-870ee6f9570e': {
-        'width': 100, 'height': 100, 'left': 420, 'top': 310},
+    '266ddf01-bc63-41b0-939c-94a543e22c37': {'width': 100, 'height': 100, 'left': 430, 'top': 270},
+    '2ffb959c-0578-40eb-9d52-294ee17c9aae': {'width': 100, 'height': 100, 'left': 440, 'top': 280},
+    '3f9cb5b5-2ca9-401d-b4c0-04358e6442b5': {'width': 100, 'height': 100, 'left': 435, 'top': 280},
+    '71e53fd1-38f2-49bb-93a1-3c826fbe7c13': {'width': 100, 'height': 100, 'left': 310, 'top': 100},
+    '8b9d37be-3974-495a-b34f-4de98569d747': {'width': 100, 'height': 100, 'left': 420, 'top': 300},
+    'cbaaf335-5fcb-4ec1-bb66-2dc9cca55ce9': {'width': 100, 'height': 100, 'left': 370, 'top': 120},
+    'd7128a09-1822-49fc-a287-870ee6f9570e': {'width': 100, 'height': 100, 'left': 420, 'top': 310},
 }
 
 # ----------------------------
