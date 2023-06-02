@@ -46,9 +46,9 @@ pipe_kwargs = {
     'preprocess_video': {  # process and reencode video with ffmpeg
         'run': False, 'kwargs': {'overwrite': False, 'mp4_file': None}},
     'reencode_video': {  # reencode already ffmpeg-processed video
-        'run': True, 'kwargs': {'overwrite': False}},
+        'run': False, 'kwargs': {'overwrite': False}},
     'infer_video': {
-        'run': True, 'kwargs': {'overwrite': False, 'gpu_id': gpu_id}},
+        'run': False, 'kwargs': {'overwrite': False, 'gpu_id': gpu_id}},
     'smooth_kalman': {
         'run': False, 'kwargs': {'overwrite': False, 'tracker_name': tracker_name}},
 }
@@ -82,10 +82,49 @@ pipe_kwargs = {
 #     '8181ca89-42b7-4ff2-a0f9-4e609d6f5c67',
 # ]
 
-# pipeline testing
+# tongue network testing
+# eids = [
+#     '15948667-747b-4702-9d53-354ac70e9119',
+#     # 'aad23144-0e52-4eac-80c5-c4ee2decb198',
+# ]
+
+# downloads for roi network
 eids = [
-    '15948667-747b-4702-9d53-354ac70e9119',
-    # 'aad23144-0e52-4eac-80c5-c4ee2decb198',
+    # # widefield
+    # 'b83033ed-c5d0-4e49-a595-0a04c48f059d',
+    # # mesoscope
+    # '3f9cb5b5-2ca9-401d-b4c0-04358e6442b5',
+    # '71e53fd1-38f2-49bb-93a1-3c826fbe7c13',
+    # '8b9d37be-3974-495a-b34f-4de98569d747',
+    # 'cbaaf335-5fcb-4ec1-bb66-2dc9cca55ce9',
+    # # fiber photometry
+    '5190d2b3-fd63-4609-82f3-6b1d30f969c1',
+    '4bd1973d-8d44-4843-85dd-d672ed2a3329',
+    'de9c676c-04b2-40ba-8bf8-75946f45d165',
+    'e55117bd-6afe-4cf5-997b-23783eba9a2d',
+    '4aec1b74-fd28-47cf-8373-f0c714c3d32d',
+    '163fa79b-9b33-43ee-8d58-335f4c12d370',
+    'a60b059d-6553-4a46-be03-eec202f4097d',
+    # # pupil fails
+    # '56956777-dca5-468c-87cb-78150432cc57',  # fov
+    # 'ebe2efe3-e8a1-451a-8947-76ef42427cc9',  # fov
+    # '77e6dc6a-66ed-433c-b1a2-778c914f523c',  # fov
+    # 'a405053a-eb13-4aa4-850c-5a337e5dc7fd',  # dark
+    # 'e6043c7d-8f6e-4b66-8309-2ec0abac0f79',  # dark
+    # '4ef13091-1bc8-4f32-9619-107bdf48540c',  # dark
+    # '25d1920e-a2af-4b6c-9f2e-fc6c65576544',  # dark
+    # '03cf52f6-fba6-4743-a42e-dd1ac3072343',  # dark
+    # '7f6b86f9-879a-4ea2-8531-294a221af5d0',  # dark
+    # tongue fails
+    # 'a8a8af78-16de-4841-ab07-fde4b5281a03',  # dark
+    # '35ed605c-1a1a-47b1-86ff-2b56144f55af',  # ?
+    # '5bcafa14-71cb-42fa-8265-ce5cda1b89e0',  # ?
+    # 'dfbe628d-365b-461c-a07f-8b9911ba83aa',  # unusual spout
+    # 'f3ce3197-d534-4618-bf81-b687555d1883',  # ?
+    # '5b49aca6-a6f4-4075-931a-617ad64c219c',  # unusual spout
+    # '5139ce2c-7d52-44bf-8129-692d61dd6403',  # dark
+    # 'dcceebe5-4589-44df-a1c1-9fa33e779727',  # unusual spout
+    # '49e0ab27-827a-4c91-bcaa-97eea27a1b8d',  # dark
 ]
 
 
@@ -140,9 +179,9 @@ for e, eid in enumerate(eids):
 
     pipe = TonguePipeline(
         eid=eid, one=one, base_dir=base_dir,
-        allow_trial_fail=False, load_dlc=True,
+        # allow_trial_fail=False, load_dlc=True,
         # for sessions that have no DLC traces
-        # allow_trial_fail=True, load_dlc=False,
+        allow_trial_fail=True, load_dlc=False,
         # crop_params=CROP_PARAMS[eid],
     )
     print(pipe.paths.alyx_session_path)
