@@ -47,7 +47,7 @@ def get_frames_from_idxs(cap, idxs):
 
 def make_labeled_video(
         save_file, cap, points, labels=None, likelihood_thresh=0.9, max_frames=None,
-        markersize=6, framerate=20, height=4):
+        idxs=None, markersize=6, framerate=20, height=4):
     """Behavioral video overlaid with markers.
 
     Parameters
@@ -107,7 +107,12 @@ def make_labeled_video(
             print('processing frame %03i/%03i' % (n, n_frames))
 
         # plot original frame
-        frame = get_frames_from_idxs(cap, [n])
+        if idxs is None:
+            frame = get_frames_from_idxs(cap, [n])
+        elif idxs[n] == -1:
+            frame = np.zeros_like(frame)
+        else:
+            frame = get_frames_from_idxs(cap, [idxs[n]])
         ax.imshow(frame[0, 0], vmin=0, vmax=255, cmap='gray')
 
         # plot markers
@@ -128,7 +133,7 @@ def make_labeled_video(
         # add frame number
         im = ax.text(0.02, 0.98, 'frame %i' % n, **txt_fr_kwargs)
 
-        plt.savefig(os.path.join(tmp_dir, 'frame_%06i.jpeg' % n))
+        plt.savefig(os.path.join(tmp_dir, 'frame_%06i.jpeg' % n), dpi=300)
 
     save_video(save_file, tmp_dir, framerate, frame_pattern='frame_%06i.jpeg')
 
