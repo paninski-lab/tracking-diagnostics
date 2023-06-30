@@ -417,7 +417,7 @@ def save_video(save_file, tmp_dir, framerate=20, frame_pattern='frame_%06d.jpeg'
 
     # make mp4 from images using ffmpeg
     call_str = \
-        'ffmpeg -r %f -i %s -c:v libx264 %s' % (
+        'ffmpeg -r %f -i %s -c:v libx264 -vf "pad=ceil(iw/2)*2:ceil(ih/2)*2" %s' % (
             framerate, os.path.join(tmp_dir, 'frame_%06d.jpeg'), save_file)
     print(call_str)
     subprocess.run(['/bin/bash', '-c', call_str], check=True)
