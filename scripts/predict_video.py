@@ -46,7 +46,6 @@ def run():
         ckpt_file=ckpt_file,
         cfg_file=cfg_new,
         preds_file=args.pred_csv_file,
-        gpu_id=args.gpu_id,
     )
 
 

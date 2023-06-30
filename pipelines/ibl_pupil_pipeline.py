@@ -19,7 +19,7 @@ from diagnostics.paper_ibl import PupilPipeline
 # pipeline user options
 # ----------------------------
 data_dir = '/media/mattw/behavior/pose-estimation-data-final/ibl-pupil'
-base_dir = '/media/mattw/behavior/results/pose-estimation/ibl-pupil-fixed/ensembling-expts'
+base_dir = '/media/mattw/behavior/results/pose-estimation/ibl-pupil/ensembling-expts'
 """directory structure
 
 base_dir

@@ -42,13 +42,13 @@ rng_seed = 0  # choose ensemble member for single-model analyses (decoding)
 tracker_name = 'heatmap_mhcrnn_tracker'
 pipe_kwargs = {
     'download_data': {  # download data from flatiron
-        'run': True, 'kwargs': {}},
+        'run': False, 'kwargs': {}},
     'preprocess_video': {  # process and reencode video with ffmpeg
         'run': False, 'kwargs': {'overwrite': False, 'mp4_file': None}},
     'reencode_video': {  # reencode already ffmpeg-processed video
         'run': False, 'kwargs': {'overwrite': False}},
     'infer_video': {
-        'run': False, 'kwargs': {'overwrite': False, 'gpu_id': gpu_id}},
+        'run': True, 'kwargs': {'overwrite': False, 'gpu_id': gpu_id}},
     'smooth_kalman': {
         'run': False, 'kwargs': {'overwrite': False, 'tracker_name': tracker_name}},
 }
@@ -83,13 +83,13 @@ pipe_kwargs = {
 # ]
 
 # tongue network testing
-# eids = [
-#     '15948667-747b-4702-9d53-354ac70e9119',
-#     # 'aad23144-0e52-4eac-80c5-c4ee2decb198',
-# ]
+eids = [
+    '15948667-747b-4702-9d53-354ac70e9119',
+    # 'aad23144-0e52-4eac-80c5-c4ee2decb198',
+]
 
 # downloads for roi network
-eids = [
+# eids = [
     # # widefield
     # 'b83033ed-c5d0-4e49-a595-0a04c48f059d',
     # # mesoscope
@@ -98,13 +98,13 @@ eids = [
     # '8b9d37be-3974-495a-b34f-4de98569d747',
     # 'cbaaf335-5fcb-4ec1-bb66-2dc9cca55ce9',
     # # fiber photometry
-    '5190d2b3-fd63-4609-82f3-6b1d30f969c1',
-    '4bd1973d-8d44-4843-85dd-d672ed2a3329',
-    'de9c676c-04b2-40ba-8bf8-75946f45d165',
-    'e55117bd-6afe-4cf5-997b-23783eba9a2d',
-    '4aec1b74-fd28-47cf-8373-f0c714c3d32d',
-    '163fa79b-9b33-43ee-8d58-335f4c12d370',
-    'a60b059d-6553-4a46-be03-eec202f4097d',
+    # '5190d2b3-fd63-4609-82f3-6b1d30f969c1',
+    # '4bd1973d-8d44-4843-85dd-d672ed2a3329',
+    # 'de9c676c-04b2-40ba-8bf8-75946f45d165',
+    # 'e55117bd-6afe-4cf5-997b-23783eba9a2d',
+    # '4aec1b74-fd28-47cf-8373-f0c714c3d32d',
+    # '163fa79b-9b33-43ee-8d58-335f4c12d370',
+    # 'a60b059d-6553-4a46-be03-eec202f4097d',
     # # pupil fails
     # '56956777-dca5-468c-87cb-78150432cc57',  # fov
     # 'ebe2efe3-e8a1-451a-8947-76ef42427cc9',  # fov
@@ -125,7 +125,7 @@ eids = [
     # '5139ce2c-7d52-44bf-8129-692d61dd6403',  # dark
     # 'dcceebe5-4589-44df-a1c1-9fa33e779727',  # unusual spout
     # '49e0ab27-827a-4c91-bcaa-97eea27a1b8d',  # dark
-]
+# ]
 
 
 # hard code cropping params for these eids
@@ -158,7 +158,7 @@ eids = [
 # lp model directories
 # ----------------------------
 model_dirs = {
-    '0': '/media/mattw/behavior/results/pose-estimation/ibl-tongue/2023-06-01/14-45-41',
+    '0': '/media/mattw/behavior/results/pose-estimation/ibl-tongue/2023-06-21/12-38-42',
     # '1': None,
     # '2': None,
     # '3': None,
