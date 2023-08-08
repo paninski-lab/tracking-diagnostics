@@ -26,7 +26,10 @@ def get_configs_in_dir(hydra_search_dir: str, config_name: str = "config.yaml") 
     assert os.path.isdir(hydra_search_dir)
     filelist = []
     for dirpath, dirnames, filenames in os.walk(hydra_search_dir):
-        for filename in [f for f in filenames if f.endswith(config_name)]:
+        if dirpath.find('labeled-data') > -1:
+            continue
+        filename_configs = [f for f in filenames if f.endswith(config_name)]
+        for filename in filename_configs:
             filelist.append(os.path.join(dirpath, filename))
     return filelist
 
