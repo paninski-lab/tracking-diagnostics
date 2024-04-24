@@ -503,7 +503,7 @@ def plot_metric_vs_pixerror_scatters(
     for j, model_type in enumerate(models_to_compare):
         create_subtitle(fig, grid[j, ::], model_type.capitalize())
         for i, (metric_name, ax_title) in enumerate(plots.items()):
-            r_val, p_val = plot_scatters(
+            r_val, p_val, _, _ = plot_scatters(
                 df=df_labeled_metrics, metric_names=['pixel_error', metric_name],
                 train_frames=train_frames, split_set=split_set, distribution='OOD',
                 model_types=[model_type, model_type], keypoint=keypoint, ax=axes[j][i],
@@ -550,7 +550,7 @@ def plot_metric_vs_metric_scatters(
     for j, model_type in enumerate(models_to_compare):
         create_subtitle(fig, grid[j, ::], model_type.capitalize())
         for i, (metric_name, ax_title) in enumerate(plots.items()):
-            r_val, p_val = plot_scatters(
+            r_val, p_val, _, _ = plot_scatters(
                 df=df_labeled_metrics, metric_names=['confidence', metric_name],
                 train_frames=train_frames, split_set=split_set, distribution='OOD',
                 model_types=[model_type, model_type], keypoint=keypoint, ax=axes[j][i],
@@ -561,7 +561,7 @@ def plot_metric_vs_metric_scatters(
             if (i == 0) and (j == 0):
                 axes[j][i].legend()
         if n_cols == 3:
-            r_val, p_val = plot_scatters(
+            r_val, p_val, _, _ = plot_scatters(
                 df=df_labeled_metrics,
                 metric_names=['pca_singleview_error', 'pca_multiview_error'],
                 train_frames=train_frames, split_set=split_set, distribution='OOD',
@@ -664,7 +664,13 @@ def savefig(save_file):
 # -------------------------------------------------------------------------------------------------
 # these functions produce reports
 # -------------------------------------------------------------------------------------------------
-def generate_report_labeled(dataset_name, df_save_dir, fig_save_dir, file_ext='png'):
+def generate_report_labeled(
+    dataset_name,
+    df_save_dir,
+    fig_save_dir,
+    train_frames_list=['75', '1'],
+    file_ext='png'
+):
 
     sns.set_style('white')
 
@@ -676,7 +682,7 @@ def generate_report_labeled(dataset_name, df_save_dir, fig_save_dir, file_ext='p
 
     # plot basic metrics for each model type
     models_to_compare = ['baseline', 'semi-super context']
-    for train_frames in ['75', '1']:
+    for train_frames in train_frames_list:
         train_frame_str = 'full train frames' if train_frames == '1' \
             else '%s train frames' % train_frames
         title = 'Labeled data results on %s dataset (%s)' % (dataset_name, train_frame_str)
@@ -689,7 +695,7 @@ def generate_report_labeled(dataset_name, df_save_dir, fig_save_dir, file_ext='p
 
     # plot scatters of various metrics vs each other
     models_to_compare = ['baseline', 'context', 'semi-super', 'semi-super context']
-    for train_frames in ['75', '1']:
+    for train_frames in train_frames_list:
         train_frame_str = 'full train frames' if train_frames == '1' \
             else '%s train frames' % train_frames
         title = 'Labeled data results on %s dataset (%s)' % (dataset_name, train_frame_str)
@@ -724,12 +730,12 @@ def generate_report_video(
         df_video_preds = pd.concat([
             df_video_preds,
             pd.read_parquet(
-                os.path.join(df_save_dir_dlc, "%s_video_preds_dlc.pqt" % dataset_name))
+                os.path.join(df_save_dir_dlc, "%s_video_preds.pqt" % dataset_name))
         ])
         df_video_metrics = pd.concat([
             df_video_metrics,
             pd.read_parquet(
-                os.path.join(df_save_dir_dlc, "%s_video_metrics_dlc.pqt" % dataset_name))
+                os.path.join(df_save_dir_dlc, "%s_video_metrics.pqt" % dataset_name))
         ])
     df_video_metrics_gr = df_video_metrics.groupby([
         'metric', 'video_name', 'model_path', 'rng_seed_data_pt', 'train_frames', 'model_type']

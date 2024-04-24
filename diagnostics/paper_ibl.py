@@ -7,10 +7,10 @@ from brainbox.io.one import SessionLoader
 from brainwidemap.bwm_loading import (
     bwm_query, load_good_units, load_trials_and_mask, merge_probes)
 from brainbox.processing import bincount2D
-from brainwidemap.decoding.functions.decoding import fit_eid
-from brainwidemap.decoding.functions.process_targets import load_behavior
-from brainwidemap.decoding.functions.utils import get_save_path
-from brainwidemap.decoding.settings_template import params
+# from brainwidemap.decoding.functions.decoding import fit_eid
+# from brainwidemap.decoding.functions.process_targets import load_behavior
+# from brainwidemap.decoding.functions.utils import get_save_path
+# from brainwidemap.decoding.settings_template import params
 import cv2
 from neurodsp.smooth import smooth_interpolate_savgol
 import numpy as np
@@ -43,7 +43,7 @@ WINDOW_LAG = -0.4  # sec
 
 # local info
 conda_script = '/home/mattw/anaconda3/etc/profile.d/conda.sh'
-conda_env = 'pose2'
+conda_env = 'pose'
 
 
 class Pipeline(object):
@@ -126,7 +126,7 @@ class Pipeline(object):
         if dataset_types is None:
             dataset_types = [
                 '_iblrig_%sCamera.raw.mp4' % self.view,  # raw videos
-                '_ibl_%sCamera.times.npy' % self.view,   # alf camera times
+                # '_ibl_%sCamera.times.npy' % self.view,   # alf camera times
             ]
 
         for dataset_type in dataset_types:
@@ -183,8 +183,7 @@ class Pipeline(object):
             f'--data_dir {data_dir} ' + \
             f'--model_dir {model_dir} ' + \
             f'--video_file {video_file} ' + \
-            f'--pred_csv_file {pred_csv_file} ' + \
-            f'--gpu_id {gpu_id} '
+            f'--pred_csv_file {pred_csv_file} '
 
         print(call_str)
         subprocess.run(['/bin/bash', '-c', call_str], check=True)
@@ -564,10 +563,11 @@ class PupilPipeline(Pipeline):
             pupil_diam = features_.loc[:, (tracker_name, 'diameter')]
         return pupil_diam.to_numpy()
 
-    def compute_peth(self, pupil_diam, align_event='feedback_times'):
+    def compute_peth(self, pupil_diam, align_event='feedback_times', camera_times=None):
 
         # get camera times
-        camera_times = self.sess_loader.pupil['times'].to_numpy()
+        if camera_times is None:
+            camera_times = self.sess_loader.pupil['times'].to_numpy()
 
         # get trials data
         cols_to_keep = ['stimOn_times', 'feedback_times', 'feedbackType']
@@ -1010,14 +1010,48 @@ class MultiviewPawPipeline(object):
         times = {
             'left': np.load(self.timestamps_file('left')),
             'right': np.load(self.timestamps_file('right')),
-        }
+        }          
+
+        # update times
+        from pipelines.timestamp_offsets import offsets
+        offset = offsets.get(self.eid, 0)
+        if offset != 0:
+            if offset > 0:
+                # right leads left; drop right backwards
+                abs_off = int(2.5 * offset)  # 2.5 is because offset is wrt left timestamps
+                times['right'] = np.concatenate([
+                    times['right'][abs_off:],
+                    np.nan * np.zeros(abs_off),
+                ])
+            else:
+                abs_off = int(2.5 * abs(offset))  # 2.5 is because offset is wrt left timestamps
+                # right lags left; push right forwards
+                times['right'] = np.concatenate([
+                    np.nan * np.zeros(abs_off),
+                    times['right'][:-abs_off],
+
+                ])
 
         interpolater = interpolate.interp1d(
             times['right'], np.arange(len(times['right'])), kind='nearest',
             fill_value='extrapolate')
         interp_r2l = np.round(interpolater(times['left'])).astype(np.int32)
+        if idx_beg is None or idx_end is None:
+            # find section with highest motion energy in predictions
+            clip_len = 500
+            me = compute_motion_energy_from_predection_df(
+                self.pipes['left'].sess_loader.pose['leftCamera'].loc[
+                    :, ['paw_r_x', 'paw_r_y', 'paw_l_x', 'paw_l_y']
+                ],
+            )
+            # find window
+            df_me = pd.DataFrame({"me": me})
+            df_me_win = df_me.rolling(window=clip_len, center=False).mean()
+            # rolling places results in right edge of window, need to subtract this
+            idx_beg = df_me_win.me.argmax() - clip_len
+            idx_end = idx_beg + clip_len
         idxs_left = np.arange(idx_beg, idx_end)
-        idxs = {'left': idxs_left, 'right': interp_r2l[idxs_left]}
+        idxs = {'left': idxs_left, 'right': interp_r2l[idxs_left]}       
 
         # make sure we're far enough into the session for both cameras to have started
         assert np.all(idxs['left'][:10] != 0)
@@ -1267,3 +1301,12 @@ def get_spout_location(dlc_df):
     median_x = np.nanmedian(spout_x)
     median_y = np.nanmedian(spout_y)
     return median_x, median_y
+
+
+def compute_motion_energy_from_predection_df(
+    df: pd.DataFrame,
+) -> np.ndarray:
+    kps = df.to_numpy()
+    me = np.nanmean(np.diff(kps, axis=0), axis=-1)
+    me = np.concatenate([[0], me])
+    return me

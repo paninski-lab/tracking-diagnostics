@@ -33,7 +33,6 @@ def get_model_params(cfg):
         "train_frames": cfg["training"]["train_frames"],
         "early_stop_patience": cfg["training"]["early_stop_patience"],
         "unfreezing_epoch": cfg["training"]["unfreezing_epoch"],
-        "dropout_rate": cfg["training"]["dropout_rate"],
         "max_epochs": cfg["training"]["max_epochs"],
         "rng_seed_data_pt": cfg["training"]["rng_seed_data_pt"],
         "rng_seed_model_pt": cfg["training"]["rng_seed_model_pt"],
@@ -41,7 +40,6 @@ def get_model_params(cfg):
         # "resnet_version": cfg["model"]["resnet_version"],
         "model_type": cfg["model"]["model_type"],
         "model_name": cfg["model"]["model_name"],
-        "do_context": cfg["model"]["do_context"],
     }
     if cfg_less["model_type"] == "heatmap":
         cfg_less["heatmap_loss_type"] = cfg["model"]["heatmap_loss_type"]
@@ -49,7 +47,7 @@ def get_model_params(cfg):
     semi_supervised = check_if_semi_supervised(cfg.model.losses_to_use)
     if semi_supervised:
         cfg_less["losses_to_use"] = cfg["model"]["losses_to_use"]
-        cfg_less["limit_train_batches"] = cfg["training"]["limit_train_batches"]
+        # cfg_less["limit_train_batches"] = cfg["training"]["limit_train_batches"]
         if "pca_multiview" in cfg_less["losses_to_use"]:
             cfg_less["pca_multiview"] = cfg["losses"]["pca_multiview"]
         if "pca_singleview" in cfg_less["losses_to_use"]:
@@ -64,11 +62,6 @@ def get_model_params(cfg):
             cfg_less["unimodal_kl"] = cfg["losses"]["unimodal_kl"]
         if "unimodal_js" in cfg_less["losses_to_use"]:
             cfg_less["unimodal_js"] = cfg["losses"]["unimodal_js"]
-        if cfg_less["do_context"] == True:
-            if "consecutive_sequences" in cfg["dali"]["context"]["train"]:
-                cfg_less["consecutive_sequences"] = cfg["dali"]["context"]["train"]["consecutive_sequences"]
-            elif "random_shuffle" in cfg["dali"]["context"]["train"]:
-                cfg_less["consecutive_sequences"] = False
 
     else:
         cfg_less["losses_to_use"] = []
@@ -130,11 +123,11 @@ def find_model_versions(base_dir, cfg, verbose=False, keys_to_sweep=[], needs_pr
                 **cfg_["training"],
             }
             # hacking the consecutive_sequences param to make it work
-            if "consecutive_sequences" in cfg_curr["context"]["train"]:
-                cfg_curr["consecutive_sequences"] = cfg_curr["context"]["train"]["consecutive_sequences"]
-            elif "random_shuffle" in cfg_curr["context"]["train"]:
-                if cfg_curr["context"]["train"]["random_shuffle"]:
-                    cfg_curr["consecutive_sequences"] = False
+            # if "consecutive_sequences" in cfg_curr["context"]["train"]:
+            #     cfg_curr["consecutive_sequences"] = cfg_curr["context"]["train"]["consecutive_sequences"]
+            # elif "random_shuffle" in cfg_curr["context"]["train"]:
+            #     if cfg_curr["context"]["train"]["random_shuffle"]:
+            #         cfg_curr["consecutive_sequences"] = False
             if cfg_curr["losses_to_use"] is None:  # support null case in hydra
                 cfg_curr["losses_to_use"] = []
             if all([cfg_curr[key] == cfg_req[key] for key in cfg_req.keys()]):
