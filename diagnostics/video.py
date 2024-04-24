@@ -188,7 +188,7 @@ def make_labeled_video_wrapper(
     )
 
 
-def make_sync_video(save_file, caps, idxs, framerate=20, height=3, max_frames=1000):
+def make_sync_video(save_file, caps, idxs, markers=None, framerate=20, height=3, max_frames=1000):
 
     tmp_dir = os.path.join(os.path.dirname(save_file), 'tmpZzZ')
     os.makedirs(tmp_dir, exist_ok=True)
@@ -213,6 +213,10 @@ def make_sync_video(save_file, caps, idxs, framerate=20, height=3, max_frames=10
     axes_fr = {'right': fig.add_subplot(gs[0]), 'left': fig.add_subplot(gs[1])}
     plt.subplots_adjust(wspace=0, hspace=0, left=0, bottom=0, right=1, top=1)
 
+    if markers:
+        xmask = markers['left'].columns.get_level_values('coords').isin(['x'])
+        ymask = markers['left'].columns.get_level_values('coords').isin(['y'])
+
     for idx_frame in range(n_frames):
 
         if idx_frame % 100 == 0:
@@ -234,6 +238,20 @@ def make_sync_video(save_file, caps, idxs, framerate=20, height=3, max_frames=10
                 else:
                     frame_tmp = frame[0, 0]
             axes_fr[view].imshow(frame_tmp, vmin=0, vmax=vmax, cmap='gray')
+            if markers:
+                # markers are always aligned to left view
+                idx = idxs['left'][idx_frame]
+                xs = markers[view].iloc[idx, xmask]
+                ys = markers[view].iloc[idx, ymask]
+                # resize
+                xs = xs / 128.0 * img_width_r
+                ys = ys / 102.0 * img_height_r
+                if view == 'right':
+                    xs = img_width_r - xs
+                    colors = ['m', 'r']
+                else:
+                    colors = ['r', 'm']
+                axes_fr[view].scatter(xs, ys, s=2, c=colors)
             ax.set_xticks([])
             ax.set_yticks([])
 

@@ -970,6 +970,36 @@ class MultiviewPawPipeline(object):
         # copy paths from one of the single-view pipeline objects
         self.paths = self.pipes['left'].paths
 
+    def load_timestamps(self):
+
+        times = {
+            'left': np.load(self.timestamps_file('left')),
+            'right': np.load(self.timestamps_file('right')),
+        }
+
+        # update times
+        from pipelines.timestamp_offsets import offsets
+        offset = offsets.get(self.eid, 0)
+
+        if offset != 0:
+            if offset > 0:
+                # right leads left; drop right backwards
+                abs_off = int(2.5 * offset)  # 2.5 is because offset is wrt left timestamps
+                times['right'] = np.concatenate([
+                    times['right'][abs_off:],
+                    np.nan * np.zeros(abs_off),
+                ])
+            else:
+                abs_off = int(2.5 * abs(offset))  # 2.5 is because offset is wrt left timestamps
+                # right lags left; push right forwards
+                times['right'] = np.concatenate([
+                    np.nan * np.zeros(abs_off),
+                    times['right'][:-abs_off],
+
+                ])
+
+        return times
+
     def kalman_latents_file(self, view):
         return os.path.join(
             self.paths.kalman_save_dir, f'latents.kalman_smoothed.{self.eid}.{view}.csv')
@@ -981,9 +1011,17 @@ class MultiviewPawPipeline(object):
     def timestamps_file(self, view):
         return os.path.join(self.paths.alyx_session_path, 'alf', f'_ibl_{view}Camera.times.npy')
 
-    def make_sync_video(self, use_raw_vids=True, idx_beg=10000, idx_end=10500, overwrite=False):
+    def make_sync_video(
+        self,
+        use_raw_vids=True,
+        idx_beg=10000,
+        idx_end=10500,
+        plot_markers=True,
+        overwrite=False,
+    ):
 
-        save_file = os.path.join(self.paths.base_dir, 'qc_vids', f'{self.eid}.mp4')
+        save_dir = 'qc_vids_labeled' if plot_markers else 'qc_vids'
+        save_file = os.path.join(self.paths.base_dir, save_dir, f'{self.eid}.mp4')
         if os.path.exists(save_file) and not overwrite:
             print(f'{save_file} already exists; skipping')
             return
@@ -1007,30 +1045,7 @@ class MultiviewPawPipeline(object):
             }
             height = 2.2
 
-        times = {
-            'left': np.load(self.timestamps_file('left')),
-            'right': np.load(self.timestamps_file('right')),
-        }          
-
-        # update times
-        from pipelines.timestamp_offsets import offsets
-        offset = offsets.get(self.eid, 0)
-        if offset != 0:
-            if offset > 0:
-                # right leads left; drop right backwards
-                abs_off = int(2.5 * offset)  # 2.5 is because offset is wrt left timestamps
-                times['right'] = np.concatenate([
-                    times['right'][abs_off:],
-                    np.nan * np.zeros(abs_off),
-                ])
-            else:
-                abs_off = int(2.5 * abs(offset))  # 2.5 is because offset is wrt left timestamps
-                # right lags left; push right forwards
-                times['right'] = np.concatenate([
-                    np.nan * np.zeros(abs_off),
-                    times['right'][:-abs_off],
-
-                ])
+        times = self.load_timestamps()
 
         interpolater = interpolate.interp1d(
             times['right'], np.arange(len(times['right'])), kind='nearest',
@@ -1051,17 +1066,30 @@ class MultiviewPawPipeline(object):
             idx_beg = df_me_win.me.argmax() - clip_len
             idx_end = idx_beg + clip_len
         idxs_left = np.arange(idx_beg, idx_end)
-        idxs = {'left': idxs_left, 'right': interp_r2l[idxs_left]}       
+        idxs = {'left': idxs_left, 'right': interp_r2l[idxs_left]}
+
+        if plot_markers:
+            markers = {
+                'left': pd.read_csv(
+                    self.kalman_markers_file('left'), index_col=0, header=[0, 1, 2]
+                ),
+                'right': pd.read_csv(
+                    self.kalman_markers_file('right'), index_col=0, header=[0, 1, 2]
+                ),
+            }
+        else:
+            markers = None
 
         # make sure we're far enough into the session for both cameras to have started
         assert np.all(idxs['left'][:10] != 0)
         assert np.all(idxs['right'][:10] != 0)
 
-        make_sync_video(save_file, caps, idxs, framerate=20, height=height, max_frames=10000)
+        make_sync_video(
+            save_file, caps, idxs, markers=markers, framerate=20, height=height, max_frames=10000,
+        )
 
     def smooth_kalman(
-            self, preds_csv_files, model_dirs, tracker_name, timestamp_files=None,
-            overwrite=False):
+            self, preds_csv_files, model_dirs, tracker_name, timestamp_files=None, overwrite=False):
 
         # check to make sure predictions exist
         all_exist = True
@@ -1112,8 +1140,9 @@ class MultiviewPawPipeline(object):
         # collect timestamps from both views
         if timestamp_files is None:
             # load from ibl database
-            timestamps_l_cam = np.load(self.timestamps_file('left'))
-            timestamps_r_cam = np.load(self.timestamps_file('right'))
+            times = self.load_timestamps()
+            timestamps_l_cam = times['left']
+            timestamps_r_cam = times['right']
         else:
             # assume dict
             timestamps_l_cam = np.load(timestamp_files['left'])
@@ -1131,7 +1160,7 @@ class MultiviewPawPipeline(object):
             timestamps_left_cam=timestamps_l_cam,
             timestamps_right_cam=timestamps_r_cam,
             keypoint_names=self.keypoint_names,
-            smooth_param=0.1,
+            smooth_param=10,
             quantile_keep_pca=25,
         )
 
@@ -1303,9 +1332,7 @@ def get_spout_location(dlc_df):
     return median_x, median_y
 
 
-def compute_motion_energy_from_predection_df(
-    df: pd.DataFrame,
-) -> np.ndarray:
+def compute_motion_energy_from_predection_df(df: pd.DataFrame) -> np.ndarray:
     kps = df.to_numpy()
     me = np.nanmean(np.diff(kps, axis=0), axis=-1)
     me = np.concatenate([[0], me])

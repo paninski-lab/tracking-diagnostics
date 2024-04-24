@@ -2,6 +2,7 @@
 # + means right is ahead of left
 
 offsets = {
+    'db4df448-e449-4a6f-a0e7-288711e7a75a': 1,  # Berkeley
     'e535fb62-e245-4a48-b119-88ce62a6fe67': 2,  # Berkeley
     '54238fd6-d2d0-4408-b1a9-d19d24fd29ce': 1,  # Berkeley
     'b03fbc44-3d8e-4a6c-8a50-5ea3498568e0': 2,  # Berkeley
