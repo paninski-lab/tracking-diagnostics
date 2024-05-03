@@ -441,11 +441,18 @@ def ensemble_kalman_smoother_paw_asynchronous(
         bl_right_np = markers_list_right_cam[model_id].to_numpy()
         bl_right_interp = []
         for i in range(bl_left_np.shape[1]):
-            bl_right_interp.append(interp1d(timestamps_right_cam, bl_right_np[:, i]))
+            bl_right_interp.append(interp1d(
+                timestamps_right_cam,
+                bl_right_np[:, i],
+                bounds_error=False,
+                fill_value='extrapolate',
+            ))
+        times_diff = 0
         for i, ts in enumerate(timestamps_left_cam):
             if ts > timestamps_right_cam[-1]:
                 break
             if ts < timestamps_right_cam[0]:
+                times_diff += 1
                 continue
             left_markers = np.array(bl_left_np[i, [0, 1, 3, 4]])
             left_markers_curr.append(left_markers)
@@ -487,7 +494,15 @@ def ensemble_kalman_smoother_paw_asynchronous(
 
     # keep percentage of the points for multi-view PCA based lowest ensemble variance
     hstacked_vars = np.hstack((left_cam_ensemble_vars, right_cam_ensemble_vars))
-    max_vars = np.max(hstacked_vars, 1)
+    max_vars = np.nanmax(hstacked_vars, 1)
+
+    # take care of nans
+    nan_idxs = np.isnan(np.sum(left_cam_ensemble_preds + right_cam_ensemble_preds, axis=1))
+    left_cam_ensemble_preds[nan_idxs] = np.nanmedian(left_cam_ensemble_preds, axis=0)
+    left_cam_ensemble_vars[nan_idxs] = np.max(max_vars)
+    right_cam_ensemble_preds[nan_idxs] = np.nanmedian(right_cam_ensemble_preds, axis=0)
+    right_cam_ensemble_vars[nan_idxs] = np.max(max_vars)
+
     good_frames = np.where(max_vars <= np.percentile(max_vars, quantile_keep_pca))[0]
 
     good_left_cam_ensemble_preds = left_cam_ensemble_preds[good_frames]
@@ -669,6 +684,11 @@ def ensemble_kalman_smoother_paw_asynchronous(
         dfs['right'].loc[:, ('ensemble-kalman_tracker', 'l_cam_paw_r', 'y')].to_numpy()[:, None],
         dfs['right'].loc[:, ('ensemble-kalman_tracker', 'l_cam_paw_r', 'likelihood')].to_numpy()[:, None],
     ])
+    if times_diff > 0:
+        pred_arr = np.vstack([
+            np.zeros((times_diff, pred_arr.shape[1])),
+            pred_arr,
+        ])
     df_left = pd.DataFrame(pred_arr, columns=pdindex)
 
     # make right cam dataframe
@@ -682,6 +702,11 @@ def ensemble_kalman_smoother_paw_asynchronous(
         dfs['left'].loc[:, ('ensemble-kalman_tracker', 'r_cam_paw_l', 'y')].to_numpy()[:, None],
         dfs['left'].loc[:, ('ensemble-kalman_tracker', 'r_cam_paw_l', 'likelihood')].to_numpy()[:, None],
     ])
+    if times_diff > 0:
+        pred_arr = np.vstack([
+            np.zeros((times_diff, pred_arr.shape[1])),
+            pred_arr,
+        ])
     df_right = pd.DataFrame(pred_arr, columns=pdindex)
 
     return {'left_df': df_left, 'right_df': df_right}

@@ -43,17 +43,26 @@ rng_seed = 0  # choose ensemble member for single-model analyses (decoding)
 tracker_name = 'heatmap_mhcrnn_tracker'
 pipe_kwargs = {
     'download_data': {  # download data from flatiron
-        'run': True, 'kwargs': {}},
+        'run': False, 'kwargs': {}},
     'preprocess_video': {  # process and reencode video with ffmpeg
-        'run': True, 'kwargs': {'overwrite': False, 'mp4_file': None}},
+        'run': False, 'kwargs': {'overwrite': False, 'mp4_file': None}},
     'reencode_video': {  # reencode already ffmpeg-processed video
         'run': False, 'kwargs': {'overwrite': False}},
     'infer_video': {
-        'run': True, 'kwargs': {'overwrite': False, 'gpu_id': gpu_id}},
+        'run': False, 'kwargs': {'overwrite': False, 'gpu_id': gpu_id}},
     'smooth_ibl': {
-        'run': True, 'kwargs': {'overwrite': False, 'tracker_name': tracker_name}},
+        'run': False, 'kwargs': {'overwrite': False, 'tracker_name': tracker_name}},
     'smooth_kalman': {
-        'run': True, 'kwargs': {'overwrite': False, 'tracker_name': tracker_name}},
+        'run': False, 'kwargs': {'overwrite': False, 'tracker_name': tracker_name}},
+    'make_qc_video': {
+        'run': True,
+        'kwargs': {
+            'overwrite': False,
+            'idx_beg': None,
+            'idx_end': None,
+            'plot_markers': True,  # only eks for now
+        },
+    },
     'decode': {
         'run': False,
         'kwargs': {
@@ -613,17 +622,60 @@ eids = [
 
 # repro-ephys sessions round 2
 eids = [
-    'b03fbc44-3d8e-4a6c-8a50-5ea3498568e0',  # Berkeley; sync off by 1-2 frames, bad
-    'e535fb62-e245-4a48-b119-88ce62a6fe67',  # Berkeley; sync off by 3-4 frames, bad
-    'c7248e09-8c0d-40f2-9eb4-700a8973d8c8',  # CCU; sync off by 1 frame, bad
-    'a8a8af78-16de-4841-ab07-fde4b5281a03',  # NYU; sync off by 1 frame, bad
-    '61e11a11-ab65-48fb-ae08-3cb80662e5d6',  # NYU; sync off by 1-2 frames; video pos bad
-    '862ade13-53cd-4221-a3fa-dda8643641f2',  # SWC(H); sync off by 2-3 frames, bad
-    '824cf03d-4012-4ab1-b499-c83a92c5589e',  # UCLA; sync off by 2-3 frames, bad
-    'dc962048-89bb-4e6a-96a9-b062a2be1426',  # UCLA; sync off by 2-3 frames, bad
-    '6899a67d-2e53-4215-a52a-c7021b5da5d4',  # UCLA; sync off by 2-3 frames, bad
-    '15b69921-d471-4ded-8814-2adad954bcd8',  # UCLA; sync off by 1 frame, bad
-    '3e6a97d3-3991-49e2-b346-6948cb4580fb',  # UW; sync off by 1-2 frames, bad
+    'db4df448-e449-4a6f-a0e7-288711e7a75a',  # Berkeley
+    'd23a44ef-1402-4ed7-97f5-47e9a7a504d9',  # Berkeley
+    '4a45c8ba-db6f-4f11-9403-56e06a33dfa4',  # Berkeley
+    'e535fb62-e245-4a48-b119-88ce62a6fe67',  # Berkeley
+    '54238fd6-d2d0-4408-b1a9-d19d24fd29ce',  # Berkeley
+    'b03fbc44-3d8e-4a6c-8a50-5ea3498568e0',  # Berkeley
+    '30c4e2ab-dffc-499d-aae4-e51d6b3218c2',  # CCU
+    'd0ea3148-948d-4817-94f8-dcaf2342bbbe',  # CCU
+    'a4a74102-2af5-45dc-9e41-ef7f5aed88be',  # CCU
+    '746d1902-fa59-4cab-b0aa-013be36060d5',  # CCU
+    '88224abb-5746-431f-9c17-17d7ef806e6a',  # CCU
+    '0802ced5-33a3-405e-8336-b65ebc5cb07c',  # CCU
+    'ee40aece-cffd-4edb-a4b6-155f158c666a',  # CCU
+    'c7248e09-8c0d-40f2-9eb4-700a8973d8c8',  # CCU
+    '72cb5550-43b4-4ef0-add5-e4adfdfb5e02',  # CCU
+    'dda5fc59-f09a-4256-9fb5-66c67667a466',  # CSHL(C)
+    '4b7fbad4-f6de-43b4-9b15-c7c7ef44db4b',  # CSHL(C)
+    'f312aaec-3b6f-44b3-86b4-3a0c119c0438',  # CSHL(C)
+    '4b00df29-3769-43be-bb40-128b1cba6d35',  # CSHL(C)
+    'ecb5520d-1358-434c-95ec-93687ecd1396',  # CSHL(C)
+    '51e53aff-1d5d-4182-a684-aba783d50ae5',  # NYU
+    'f140a2ec-fd49-4814-994a-fe3476f14e66',  # NYU
+    'a8a8af78-16de-4841-ab07-fde4b5281a03',  # NYU
+    '61e11a11-ab65-48fb-ae08-3cb80662e5d6',  # NYU
+    '73918ae1-e4fd-4c18-b132-00cb555b1ad2',  # Princeton
+    'd9f0c293-df4c-410a-846d-842e47c6b502',  # Princeton
+    'dac3a4c1-b666-4de0-87e8-8c514483cacf',  # SWC(H)
+    '6f09ba7e-e3ce-44b0-932b-c003fb44fb89',  # SWC(H)  # PROBLEM
+    '862ade13-53cd-4221-a3fa-dda8643641f2',  # SWC(H)  # PROBLEM
+    '56b57c38-2699-4091-90a8-aba35103155e',  # SWC(M)
+    '3638d102-e8b6-4230-8742-e548cd87a949',  # SWC(M)
+    '7cb81727-2097-4b52-b480-c89867b5b34c',  # SWC(M)
+    '781b35fd-e1f0-4d14-b2bb-95b7263082bb',  # UCL
+    '3f859b5c-e73a-4044-b49e-34bb81e96715',  # UCL
+    'b22f694e-4a34-4142-ab9d-2556c3487086',  # UCL
+    '0a018f12-ee06-4b11-97aa-bbbff5448e9f',  # UCL
+    'aad23144-0e52-4eac-80c5-c4ee2decb198',  # UCL
+    'b196a2ad-511b-4e90-ac99-b5a29ad25c22',  # UCL
+    'e45481fa-be22-4365-972c-e7404ed8ab5a',  # UCL
+    'd04feec7-d0b7-4f35-af89-0232dd975bf0',  # UCL
+    '1b715600-0cbc-442c-bd00-5b0ac2865de1',  # UCL
+    'c7bf2d49-4937-4597-b307-9f39cb1c7b16',  # UCL
+    '8928f98a-b411-497e-aa4b-aa752434686d',  # UCL
+    'ebce500b-c530-47de-8cb1-963c552703ea',  # UCLA
+    'dc962048-89bb-4e6a-96a9-b062a2be1426',  # UCLA
+    '6899a67d-2e53-4215-a52a-c7021b5da5d4',  # UCLA
+    '15b69921-d471-4ded-8814-2adad954bcd8',  # UCLA
+    '5ae68c54-2897-4d3a-8120-426150704385',  # UCLA
+    'ca4ecb4c-4b60-4723-9b9e-2c54a6290a53',  # UCLA
+    '824cf03d-4012-4ab1-b499-c83a92c5589e',  # UCLA
+    '3bcb81b4-d9ca-4fc9-a1cd-353a966239ca',  # UW
+    'f115196e-8dfe-4d2a-8af3-8206d93c1729',  # UW
+    '9b528ad0-4599-4a55-9148-96cc1d93fb24',  # UW
+    '3e6a97d3-3991-49e2-b346-6948cb4580fb',  # UW
 ]
 
 # ----------------------------
@@ -692,6 +744,10 @@ for e, eid in enumerate(eids):
             pipe.smooth_kalman(
                 preds_csv_file=pipe.kalman_markers_file, latents_csv_file=pipe.kalman_latents_file,
                 model_dirs=model_dirs, **pipe_kwargs['smooth_kalman']['kwargs'])
+
+        # make video snippet overlaid with predicted markers
+        if pipe_kwargs['make_qc_video']['run']:
+            pipe.make_qc_video(**pipe_kwargs['make_qc_video']['kwargs'])
 
         # decode pupil diameter from simultaneously recorded neural activity
         if pipe_kwargs['decode']['run']:

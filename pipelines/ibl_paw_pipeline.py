@@ -44,7 +44,7 @@ pipe_kwargs = {
         'run': False,
         'kwargs': {}},
     'make_sync_video': {  # create sync video for manual timestamp qc
-        'run': True,
+        'run': False,
         'kwargs': {
             'overwrite': False,
             'use_raw_vids': True,
@@ -71,7 +71,6 @@ pipe_kwargs = {
             # 'overwrite': False,
             'tracker_name': tracker_name,
             'trackers': ['dlc', 'lp', 'lp+ks'],  # 'dlc' | 'lp' | 'lp+ks'
-            # 'trackers': ['lp+ks'],  # 'dlc' | 'lp' | 'lp+ks'
             'rng_seed': rng_seed,  # for 'lp' tracker
             'date': '02-02-2023',
         },
@@ -321,7 +320,7 @@ eids = [
 # for repro-ephys paper: round 2
 # --------------------------------------------------------------
 eids = [
-    'db4df448-e449-4a6f-a0e7-288711e7a75a',  # Berkeley
+    # 'db4df448-e449-4a6f-a0e7-288711e7a75a',  # Berkeley
     # 'd23a44ef-1402-4ed7-97f5-47e9a7a504d9',  # Berkeley
     # '4a45c8ba-db6f-4f11-9403-56e06a33dfa4',  # Berkeley
     # 'e535fb62-e245-4a48-b119-88ce62a6fe67',  # Berkeley
@@ -348,8 +347,8 @@ eids = [
     # '73918ae1-e4fd-4c18-b132-00cb555b1ad2',  # Princeton
     # 'd9f0c293-df4c-410a-846d-842e47c6b502',  # Princeton
     # 'dac3a4c1-b666-4de0-87e8-8c514483cacf',  # SWC(H)
-    # '6f09ba7e-e3ce-44b0-932b-c003fb44fb89',  # SWC(H)
-    # '862ade13-53cd-4221-a3fa-dda8643641f2',  # SWC(H)
+    # '6f09ba7e-e3ce-44b0-932b-c003fb44fb89',  # SWC(H)  # timestamp issues; partially fixable
+    # # '862ade13-53cd-4221-a3fa-dda8643641f2',  # SWC(H)  # timestamp issues; unfixable
     # '56b57c38-2699-4091-90a8-aba35103155e',  # SWC(M)
     # '3638d102-e8b6-4230-8742-e548cd87a949',  # SWC(M)
     # '7cb81727-2097-4b52-b480-c89867b5b34c',  # SWC(M)
@@ -398,7 +397,7 @@ if pipe_kwargs['download_data']['run'] \
         or pipe_kwargs['preprocess_video']['run'] \
         or pipe_kwargs['reencode_video']['run'] \
         or pipe_kwargs['infer_video']['run']:
-    views = ['right', 'left']
+    views = ['right'] #, 'left']
     error_log_single = {}
     for e, eid in enumerate(eids):
         for view in views:

@@ -25,7 +25,7 @@ import subprocess
 from diagnostics.ensemble_kalman_filter import ensemble_kalman_smoother_pupil
 from diagnostics.ensemble_kalman_filter import ensemble_kalman_smoother_paw_asynchronous
 from diagnostics.ensemble_kalman_filter import get_pupil_location
-from diagnostics.video import make_sync_video
+from diagnostics.video import make_labeled_video, make_sync_video
 
 
 # camera constants (from Michael Schartner)
@@ -581,6 +581,56 @@ class PupilPipeline(Pipeline):
 
         return peth_dict
 
+    def make_qc_video(self, idx_beg=1000, idx_end=1500, plot_markers=True, overwrite=False):
+
+        save_dir = 'qc_vids_labeled' if plot_markers else 'qc_vids'
+        save_file = os.path.join(self.paths.base_dir, save_dir, f'{self.eid}.mp4')
+        if os.path.exists(save_file) and not overwrite:
+            print(f'{save_file} already exists; skipping')
+            return
+
+        pupil_kps = [
+            'pupil_left_r_x', 'pupil_left_r_y',
+            'pupil_top_r_x', 'pupil_top_r_y',
+            'pupil_right_r_x', 'pupil_right_r_y',
+            'pupil_bottom_r_x', 'pupil_bottom_r_y',
+        ]
+
+        try:
+            markers_df = pd.read_csv(self.kalman_markers_file, index_col=0, header=[0, 1, 2])
+        except FileNotFoundError:
+            markers_df = self.sess_loader.pose['leftCamera'].loc[:, pupil_kps]
+
+        if idx_beg is None or idx_end is None:
+            # find section with highest motion energy in predictions
+            clip_len = 500
+            me = compute_motion_energy_from_predection_df(markers_df)
+            # find window
+            df_me = pd.DataFrame({"me": me})
+            df_me_win = df_me.rolling(window=clip_len, center=False).mean()
+            # rolling places results in right edge of window, need to subtract this
+            idx_beg = df_me_win.me.argmax() - clip_len
+            idx_end = idx_beg + clip_len
+
+        idxs = np.arange(idx_beg, idx_end)
+
+        if plot_markers:
+            markers_arr = markers_df.to_numpy()
+            markers = {}
+            for i, name in enumerate(pupil_kps[::2]):
+                markers[name] = markers_arr[idxs, i*3:(i+1)*3]
+                markers[name][:, 2] = 1.0  # set likelihood to update eks default of nan
+        else:
+            markers = {}
+
+        make_labeled_video(
+            save_file=save_file,
+            cap=self.video.video_cap,
+            points=[markers],
+            idxs=idxs,
+            framerate=20, height=2, max_frames=10000,
+        )
+
 
 class TonguePipeline(Pipeline):
 
@@ -1020,7 +1070,7 @@ class MultiviewPawPipeline(object):
         overwrite=False,
     ):
 
-        save_dir = 'qc_vids_labeled' if plot_markers else 'qc_vids'
+        save_dir = 'qc_vids_labeled2' if plot_markers else 'qc_vids'
         save_file = os.path.join(self.paths.base_dir, save_dir, f'{self.eid}.mp4')
         if os.path.exists(save_file) and not overwrite:
             print(f'{save_file} already exists; skipping')
@@ -1048,8 +1098,11 @@ class MultiviewPawPipeline(object):
         times = self.load_timestamps()
 
         interpolater = interpolate.interp1d(
-            times['right'], np.arange(len(times['right'])), kind='nearest',
-            fill_value='extrapolate')
+            times['right'],
+            np.arange(len(times['right'])),
+            kind='nearest',
+            fill_value='extrapolate',
+        )
         interp_r2l = np.round(interpolater(times['left'])).astype(np.int32)
         if idx_beg is None or idx_end is None:
             # find section with highest motion energy in predictions
@@ -1071,18 +1124,39 @@ class MultiviewPawPipeline(object):
         if plot_markers:
             markers = {
                 'left': pd.read_csv(
-                    self.kalman_markers_file('left'), index_col=0, header=[0, 1, 2]
+                    self.kalman_markers_file('left'),
+                    # self.pipes['left'].pred_csv_file(0),
+                    index_col=0, header=[0, 1, 2]
                 ),
                 'right': pd.read_csv(
-                    self.kalman_markers_file('right'), index_col=0, header=[0, 1, 2]
+                    self.kalman_markers_file('right'),
+                    # self.pipes['right'].pred_csv_file(0),
+                    index_col=0, header=[0, 1, 2]
                 ),
             }
+            # for view in ['left', 'right']:
+            #     if times['left'].shape[0] != markers[view].shape[0]:
+            #         raise ValueError(f'{view} camera timestamp misalignment')
         else:
             markers = None
 
         # make sure we're far enough into the session for both cameras to have started
-        assert np.all(idxs['left'][:10] != 0)
-        assert np.all(idxs['right'][:10] != 0)
+        assert np.all(idxs['left'][:10] > 0)
+        assert np.all(idxs['right'][:10] > 0)
+
+        # print(f'markers length [left]: {markers["left"].shape[0]}')
+        # print(f'video frames [left]: {caps["left"].get(cv2.CAP_PROP_FRAME_COUNT)}')
+        # print(f'video time start [left]: {times["left"][0]}')
+        # print(f'clip idx start [left]: {idxs["left"][0]}')
+        # print(f'clip idx end [left]: {idxs["left"][-1]}')
+        # print(f'clip time start [left]: {times["left"][idxs["left"][0]]}')
+
+        # print(f'markers length [right]: {markers["right"].shape[0]}')
+        # print(f'video frames [right]: {caps["right"].get(cv2.CAP_PROP_FRAME_COUNT)}')
+        # print(f'video time start [right]: {times["right"][0]}')
+        # print(f'clip idx start [right]: {idxs["right"][0]}')
+        # print(f'clip idx end [right]: {idxs["right"][-1]}')
+        # print(f'clip time start [right]: {times["right"][idxs["right"][0]]}')
 
         make_sync_video(
             save_file, caps, idxs, markers=markers, framerate=20, height=height, max_frames=10000,

@@ -131,7 +131,10 @@ def make_labeled_video(
                 ax.text(0.04, 0.04 + p * 0.05, label_name, color=colors[p], **txt_kwargs)
 
         # add frame number
-        im = ax.text(0.02, 0.98, 'frame %i' % n, **txt_fr_kwargs)
+        if idxs is None:
+            im = ax.text(0.02, 0.98, 'frame %i' % n, **txt_fr_kwargs)
+        else:
+            im = ax.text(0.02, 0.98, 'frame %i' % idxs[n], **txt_fr_kwargs)
 
         plt.savefig(os.path.join(tmp_dir, 'frame_%06i.jpeg' % n), dpi=300)
 
